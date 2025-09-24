@@ -1,6 +1,7 @@
 -- 在运行此代码前，请确保您已经创建了自定义模式，例如：
 -- CREATE SCHEMA my_custom_schema;
 
+CREATE SCHEMA my_custom_schema;
 DROP TABLE my_custom_schema.ac_24hr_plus_first_icustay;
 /*
 该SQL查询旨在从MIMIC-IV数据库中创建一个符合特定筛选条件的患者队列。
