@@ -1,14 +1,19 @@
+-- 在运行此代码前，请确保您已经创建了自定义模式，例如：
+-- CREATE SCHEMA my_custom_schema;
+
+DROP TABLE my_custom_schema.ac_24hr_plus_first_icustay;
 /*
 该SQL查询旨在从MIMIC-IV数据库中创建一个符合特定筛选条件的患者队列。
-整个流程分为四个核心步骤，以确保数据符合研究要求：
+整个流程分为五个核心步骤：
 
-1.  **患者诊断筛选**: 从 `diagnoses_icd` 表中筛选出所有符合指定诊断代码（如酒精性肝硬化）的患者。
-2.  **ICU住院时长筛选**: 将符合诊断的患者与 `icustays` 表连接，并只保留那些ICU住院时长超过24小时（los > 1天）的记录。
+1.  **患者诊断筛选**: 从 `diagnoses_icd` 表中筛选出所有符合指定诊断代码的患者。
+2.  **ICU住院时长筛选**: 将患者与 `icustays` 表连接，并只保留ICU住院时长超过24小时的记录。
 3.  **首次ICU入院筛选**: 使用窗口函数 `ROW_NUMBER()` 为每个患者的ICU住院记录按时间排序。
-4.  **最终队列选择**: 从排序后的结果中，只保留每个患者的第一条记录，确保最终队列中每个患者只有一个唯一的ICU入院数据。
+4.  **最终队列选择**: 从排序后的结果中，只保留每个患者的第一条记录。
+5.  **患者年龄筛选**: 在上述所有筛选完成后，再排除年龄小于或等于18岁的患者。
 */
 
-CREATE TABLE my_custom_schema.your_final_table_name AS
+CREATE TABLE my_custom_schema.ac_24hr_plus_first_icustay AS
 WITH filtered_patients AS (
     -- 步骤1: 筛选出所有符合指定诊断的患者ID
     SELECT DISTINCT
@@ -45,15 +50,54 @@ ranked_stays AS (
         ROW_NUMBER() OVER (PARTITION BY subject_id ORDER BY intime) AS rn
     FROM
         filtered_stays
+),
+final_preliminary_cohort AS (
+    -- 步骤4: 从排序后的结果中，只保留每个患者的第一条记录（首次ICU入院）
+    SELECT
+        subject_id,
+        hadm_id,
+        stay_id,
+        los,
+        intime
+    FROM
+        ranked_stays
+    WHERE
+        rn = 1
 )
--- 步骤4: 从排序后的结果中，只保留每个患者的第一条记录（首次ICU入院）
+-- 步骤5: 将上述结果与患者表连接，并筛选年龄
 SELECT
-    subject_id,
-    hadm_id,
-    stay_id,
-    los,
-    intime
+    t1.subject_id,
+    t1.hadm_id,
+    t1.stay_id,
+    t1.los,
+    t1.intime,
+    t2.anchor_age
 FROM
-    ranked_stays
+    final_preliminary_cohort t1
+INNER JOIN
+    mimiciv_hosp.patients t2 ON t1.subject_id = t2.subject_id
 WHERE
-    rn = 1;
+    t2.anchor_age > 18; -- 筛选年龄大于18岁的患者
+    
+WITH initial_patients AS (
+    -- 步骤1: 计算符合诊断的初始患者总数
+    SELECT
+        COUNT(DISTINCT subject_id) AS initial_patients_count
+    FROM
+        mimiciv_hosp.diagnoses_icd
+    WHERE
+        (icd_version = 9 AND icd_code = '5712')
+        OR (icd_version = 10 AND icd_code IN ('K7030', 'K7031'))
+)
+-- 步骤2: 计算并显示两个数字
+SELECT
+    'initial_patients' AS patient_type,
+    initial_patients_count AS patient_count
+FROM
+    initial_patients
+UNION ALL
+SELECT
+    'final_patients' AS patient_type,
+    COUNT(DISTINCT subject_id) AS patient_count
+FROM
+    my_custom_schema.ac_24hr_plus_first_icustay;
