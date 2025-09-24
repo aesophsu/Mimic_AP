@@ -91,13 +91,13 @@ WITH initial_patients AS (
 )
 -- 步骤2: 计算并显示两个数字
 SELECT
-    'initial_patients' AS patient_type,
+    '符合诊断的初始患者总数' AS patient_type,
     initial_patients_count AS patient_count
 FROM
     initial_patients
 UNION ALL
 SELECT
-    'final_patients' AS patient_type,
+    '符合特定筛选条件患者总数' AS patient_type,
     COUNT(DISTINCT subject_id) AS patient_count
 FROM
     my_custom_schema.ac_24hr_plus_first_icustay;
