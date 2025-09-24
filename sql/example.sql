@@ -1,73 +1,55 @@
-WITH dx_ap_patients AS (
-    -- Step 1: 筛选诊断为急性胰腺炎的住院记录
-    SELECT DISTINCT
-        d.subject_id,
-        d.hadm_id
-    FROM
-        mimiciv_hosp.diagnoses_icd d
-    WHERE
-        (d.icd_version = 9 AND d.icd_code = '5770')
-        OR (d.icd_version = 10 AND d.icd_code LIKE 'K85%')
-)
-, filtered_patients AS (
-    -- Step 2: 联接 ICU 记录和患者信息，筛选住院天数和年龄
-    SELECT
-        icu.subject_id,
-        icu.hadm_id,
-        icu.intime
-    FROM
-        dx_ap_patients dx
-    JOIN
-        mimiciv_icu.icustays icu ON dx.hadm_id = icu.hadm_id
-    JOIN
-        mimiciv_hosp.patients p ON icu.subject_id = p.subject_id
-    WHERE
-        icu.los > 1        -- ICU住院天数大于1天
-        AND p.anchor_age >= 18  -- 患者年龄>=18岁
-)
-, ap_patients AS (
-    -- Step 3: 按患者排序住院，判断首次ICU住院
+DROP TABLE my_custom_schema.ac_patients_stays;
+CREATE TABLE my_custom_schema.ac_patients_stays AS
+SELECT DISTINCT
+    subject_id
+FROM
+    mimiciv_hosp.diagnoses_icd
+WHERE
+    (icd_version = 9 AND icd_code = '5712')
+    OR (icd_version = 10 AND icd_code IN ('K7030', 'K7031'))
+ORDER BY
+    subject_id;
+
+CREATE TABLE my_custom_schema.ac_24hr_plus_icustays AS
+SELECT
+    t1.subject_id,
+    t2.hadm_id,
+    t2.stay_id,
+    t2.los,
+    t2.intime
+FROM
+    my_custom_schema.ac_patients_stays t1
+INNER JOIN
+    mimiciv_icu.icustays t2 ON t1.subject_id = t2.subject_id
+WHERE
+    t2.los > 1; -- 筛选出ICU住院时长大于1天（24小时）的记录
+
+SELECT
+    COUNT(DISTINCT subject_id)
+FROM
+    my_custom_schema.ac_24hr_plus_icustays;
+    
+CREATE TABLE my_custom_schema.ac_24hr_plus_first_icustay AS
+WITH ranked_icu_stays AS (
+    -- 1. 为每个患者的ICU住院记录按intime排序
     SELECT
         subject_id,
         hadm_id,
+        stay_id,
+        los,
         intime,
         ROW_NUMBER() OVER (PARTITION BY subject_id ORDER BY intime) AS rn
     FROM
-        filtered_patients
+        my_custom_schema.ac_24hr_plus_icustays
 )
-
--- 统计各项
+-- 2. 只保留每个患者的第一条记录
 SELECT
-    '1. 符合急性胰腺炎诊断的患者总数' AS description,
-    COUNT(DISTINCT subject_id) AS count_value
-FROM dx_ap_patients
-
-UNION ALL
-
-SELECT
-    '2. 符合急性胰腺炎诊断且住院筛选的次数',
-    COUNT(DISTINCT hadm_id)
-FROM ap_patients
-
-UNION ALL
-
-SELECT
-    '3. 仅有一次ICU住院记录的患者总数',
-    COUNT(subject_id)
-FROM (
-    SELECT subject_id
-    FROM ap_patients
-    GROUP BY subject_id
-    HAVING COUNT(hadm_id) = 1
-) AS single_stay_patients
-
-UNION ALL
-
-SELECT
-    '4. 首次ICU住院的患者总数',
-    COUNT(subject_id)
-FROM (
-    SELECT subject_id
-    FROM ap_patients
-    WHERE rn = 1
-) AS first_stay_patients;
+    subject_id,
+    hadm_id,
+    stay_id,
+    los,
+    intime
+FROM
+    ranked_icu_stays
+WHERE
+    rn = 1;
