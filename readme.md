@@ -65,4 +65,3 @@
 5. 四图（ROC + Calibration + SHAP + DCA）视觉上与原文 Fig. 5-9 高度相似  
 6. ml_results.png 保存并可直接插入论文
 
-达到以上标准，即可自信宣称：“**We successfully reproduced the results of Chuang et al. (2025) with nearly identical performance and interpretability.**”
