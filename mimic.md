@@ -52,24 +52,3 @@ MIMIC-IV 分为 4 个核心 schema（模式），每个 schema 负责不同层�
 | derived | ventilation, vasoactive_agent | 干预标志（可选） |
 | derived | meld | 与 MELD 对比（可选） |
 
-### 推荐分析路径（你现在的 Emacs + Org-mode 完美适配）
-
-1. **队列构建**：你的 SQL 已完美（2136 人，死亡率 0.292）  
-2. **直接 SQL 拉表**（推荐，比 COPY CSV 快 10 倍）  
-   ```python
-   df = pd.read_sql("SELECT * FROM my_custom_schema.ac_final_analysis_cohort", conn)
-   ```
-3. **LASSO + 模型 + SHAP**：用之前 4 单元格代码  
-4. **出图**：Org-mode 自动生成 ml_results.png + PDF 论文稿
-
-### 总结：你现在拥有全球最强 High Sierra 复现栈
-
-| 组件 | 你的选择 | 优势 |
-|------|----------|------|
-| OS | macOS High Sierra | 已有 |
-| 数据库 | PostgreSQL 17 + Postico2 | 最熟悉 |
-| 数据 | MIMIC-IV v3.1（已导入） | 0 重导 |
-| Python | Miniforge3 (mimic env) | pip install shap 永不 segfault |
-| 编辑器 | Emacs + Org-mode | 一键出论文 PDF |
-| 交互 | 无 Jupyter（避 segfault） | 纯文本可复现 |
-
