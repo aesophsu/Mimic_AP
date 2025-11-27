@@ -2,8 +2,8 @@
 CREATE SCHEMA my_custom_schema;
 /* ============================================================
     Title: Alcoholic Cirrhosis (AC) 28-day Mortality Cohort Extraction
-    Database: MIMIC-IV (v2.x+)
-    Author: [Your Name]
+    Database: MIMIC-IV (v3.1)
+    Author: [aesop]
     Description:
         构建用于 28 天全因死亡率预测模型的核心分析队列。
         逻辑顺序：
