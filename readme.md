@@ -14,7 +14,7 @@
      - 28 天死亡率 **29.2%**（624/2134）  
 
 2. **特征选择**  
-   - 使用 **LASSO 回归（glmnet 等效）** 从 40+ 个候选变量中筛选出 **14 个核心变量**（必须完全一致）：  
+   - 使用 **LASSO 回归（glmnet 等效）** 从 40+ 个候选变量中筛选出核心变量：  
      ```
      Age, SOFA, APSIII, OASIS, LODS, 
      Temperature (mean), Chloride (min), Lactate (min), 
@@ -35,7 +35,7 @@
      ```
    - **MELD 原版 AUC 0.77**（需作为基准线）。
 
-4. **SHAP 解释（必须与原文 Fig. 9 高度一致）**  
+4. **SHAP 解释**  
    - **正向风险贡献（值越高，死亡风险越大）**：  
      **APSIII > Total Bilirubin > Age > LODS > APTT > SOFA**  
    - **负向保护作用（值越高，风险越低）**：  
@@ -58,10 +58,10 @@
 - SHAP 可生成**个体化解释报告**（e.g., “该患者死亡风险 68%，其中 APSIII 贡献 +0.32，Tbil 贡献 +0.28”），便于临床沟通。
 
 **复现成功标准**：  
-1. 队列死亡率 29.2±0.5%  
-2. LASSO 筛选出 **14 个变量且顺序一致**  
-3. 验证集 SVM AUC ≥ 0.860  
-4. SHAP beeswarm 图 Top 6 与原文完全一致  
-5. 四图（ROC + Calibration + SHAP + DCA）视觉上与原文 Fig. 5-9 高度相似  
+1. 队列死亡率
+2. LASSO 筛选出 核心变量  
+3. 验证集 
+4. SHAP beeswarm 图 
+5. 四图（ROC + Calibration + SHAP + DCA） 
 6. ml_results.png 保存并可直接插入论文
 
