@@ -3,7 +3,9 @@ DROP TABLE IF EXISTS temp_ap_patients;
 CREATE TEMP TABLE temp_ap_patients AS
 SELECT hadm_id, subject_id,
     MAX(CASE WHEN icd_code LIKE 'K85.1%' OR icd_code = '5770' THEN 1 ELSE 0 END) AS alcoholic_ap,
-    MAX(CASE WHEN icd_code LIKE 'K85.0%' THEN 1 ELSE 0 END) AS biliary_ap
+    MAX(CASE WHEN icd_code LIKE 'K85.0%' THEN 1 ELSE 0 END) AS biliary_ap,
+    MAX(CASE WHEN icd_code LIKE 'K85.2%' OR icd_code LIKE '272.1%' THEN 1 ELSE 0 END) AS hyperlipidemic_ap,
+    MAX(CASE WHEN icd_code LIKE 'K85.3%' THEN 1 ELSE 0 END) AS drug_induced_ap
 FROM mimiciv_hosp.diagnoses_icd
 WHERE (icd_version = 9 AND icd_code = '5770')
    OR (icd_version = 10 AND icd_code LIKE 'K85%')
