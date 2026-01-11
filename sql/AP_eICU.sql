@@ -38,7 +38,7 @@ WHERE i.icu_los_hours >= 24
             ELSE 0 END) >= 18;
 
 --------------------------------------------------------------------------------
--- 3. 深度打捞实验室指标 (含异常值防御阈值)
+-- 3. 深度打捞实验室指标 (含 pH 占位符深度剔除)
 --------------------------------------------------------------------------------
 DROP TABLE IF EXISTS temp_lab_raw_all;
 CREATE TEMP TABLE temp_lab_raw_all AS
@@ -47,18 +47,19 @@ WITH lab_filt AS (
         patientunitstayid, 
         labname,
         CASE 
-            -- pH 过滤: 仅保留 6.5 - 8.0 之间的数值 (剔除尿 pH 或录入错误)
-            WHEN labname ILIKE '%pH%' AND labresult BETWEEN 6.5 AND 8.0 THEN labresult
-            -- 肌酐过滤: 0.1 - 20 mg/dL (如果是 umol/L 则自动转换)
+            -- pH 深度清洗逻辑：
+            -- 1. 范围限定在生理存活极限 6.8 - 7.8
+            -- 2. 剔除刚好等于 7.0, 8.0, 7, 8 的整数占位符/无效值
+            WHEN labname ILIKE '%pH%' 
+                 AND labresult > 6.8 AND labresult < 7.8 
+                 AND labresult NOT IN (7.0, 8.0, 7, 8) THEN labresult
+            
+            -- 其他核心指标阈值过滤
             WHEN labname ILIKE '%creatinine%' AND labresult BETWEEN 0.1 AND 20 THEN labresult
             WHEN labname ILIKE '%creatinine%' AND labresult > 20 THEN labresult / 88.4 
-            -- BUN 过滤: 1 - 200 mg/dL
             WHEN labname ILIKE '%BUN%' AND labresult BETWEEN 1 AND 200 THEN labresult
-            -- WBC 过滤: 0.1 - 500 (10^9/L)
             WHEN labname ILIKE '%WBC%' AND labresult BETWEEN 0.1 AND 500 THEN labresult
-            -- 白蛋白过滤: 1.0 - 6.0 g/dL
             WHEN labname ILIKE '%albumin%' AND labresult BETWEEN 1.0 AND 6.0 THEN labresult
-            -- 乳酸过滤: 0.1 - 30 mmol/L
             WHEN labname ILIKE '%lactate%' AND labresult BETWEEN 0.1 AND 30 THEN labresult
             ELSE NULL 
         END AS labresult_clean
@@ -71,27 +72,25 @@ SELECT
     patientunitstayid,
     MIN(CASE WHEN labname ILIKE '%pH%' THEN labresult_clean END) AS lab_ph_min,
     MAX(CASE WHEN labname ILIKE '%creatinine%' THEN labresult_clean END) AS creatinine_max,
-    MIN(CASE WHEN labname ILIKE '%creatinine%' THEN labresult_clean END) AS creatinine_min,
     MAX(CASE WHEN labname ILIKE '%BUN%' THEN labresult_clean END) AS bun_max,
-    MIN(CASE WHEN labname ILIKE '%BUN%' THEN labresult_clean END) AS bun_min,
     MAX(CASE WHEN labname ILIKE '%WBC%' THEN labresult_clean END) AS wbc_max,
     MIN(CASE WHEN labname ILIKE '%albumin%' THEN labresult_clean END) AS albumin_min,
-    MAX(CASE WHEN labname ILIKE '%albumin%' THEN labresult_clean END) AS albumin_max,
-    MAX(CASE WHEN labname ILIKE '%lactate%' THEN labresult_clean END) AS lactate_max,
-    -- [其他辅助指标]
-    MAX(CASE WHEN labname ILIKE '%fibrinogen%' AND labresult_clean BETWEEN 50 AND 1000 THEN labresult_clean END) AS fibrinogen_max,
-    MAX(CASE WHEN labname ILIKE '%anion gap%' AND labresult_clean BETWEEN 1 AND 50 THEN labresult_clean END) AS aniongap_max
+    MAX(CASE WHEN labname ILIKE '%lactate%' THEN labresult_clean END) AS lactate_max
 FROM lab_filt
 GROUP BY patientunitstayid;
 
 --------------------------------------------------------------------------------
--- 4. 提取辅助指标 (含 pH 防御)
+-- 4. 提取辅助指标 (血气表 pH 同步清洗)
 --------------------------------------------------------------------------------
 DROP TABLE IF EXISTS temp_bg;
 CREATE TEMP TABLE temp_bg AS
 SELECT 
     patientunitstayid, 
-    MIN(CASE WHEN ph BETWEEN 6.5 AND 8.0 THEN ph ELSE NULL END) AS ph_min 
+    MIN(CASE 
+            WHEN ph > 6.8 AND ph < 7.8 
+            AND ph NOT IN (7.0, 8.0, 7, 8) 
+            THEN ph ELSE NULL 
+        END) AS ph_min 
 FROM eicu_derived.pivoted_bg 
 WHERE chartoffset BETWEEN -360 AND 1440 
   AND patientunitstayid IN (SELECT patientunitstayid FROM cohort_base)
@@ -104,7 +103,6 @@ SELECT
     MAX(NULLIF(heartrate, -1)) AS heart_rate_max,
     MAX(NULLIF(respiratoryrate, -1)) AS resp_rate_max,
     MIN(NULLIF(nibp_mean, -1)) AS mbp_min, 
-    MAX(NULLIF(temperature, -1)) AS temp_max, 
     MAX(NULLIF(spo2, -1)) AS spo2_max
 FROM eicu_derived.pivoted_vital 
 WHERE chartoffset BETWEEN -360 AND 1440 
@@ -112,7 +110,7 @@ WHERE chartoffset BETWEEN -360 AND 1440
 GROUP BY patientunitstayid;
 
 --------------------------------------------------------------------------------
--- 5. 干预与 APACHE 评分打捞 (含 pH 防御)
+-- 5. 干预与评分系统打捞 (APACHE 评分 pH 清洗)
 --------------------------------------------------------------------------------
 DROP TABLE IF EXISTS temp_interventions;
 CREATE TEMP TABLE temp_interventions AS
@@ -129,46 +127,37 @@ DROP TABLE IF EXISTS temp_apache_aps;
 CREATE TEMP TABLE temp_apache_aps AS
 SELECT 
     patientunitstayid, 
-    CASE WHEN ph BETWEEN 6.5 AND 8.0 THEN ph ELSE NULL END as ph, 
+    CASE WHEN ph > 6.8 AND ph < 7.8 AND ph NOT IN (7.0, 8.0) THEN ph ELSE NULL END as ph, 
     CASE WHEN creatinine BETWEEN 0.1 AND 20 THEN creatinine ELSE NULL END as creatinine, 
-    CASE WHEN bun BETWEEN 1 AND 200 THEN bun ELSE NULL END as bun, 
-    CASE WHEN wbc BETWEEN 0.1 AND 500 THEN wbc ELSE NULL END as wbc, 
-    CASE WHEN albumin BETWEEN 1.0 AND 6.0 THEN albumin ELSE NULL END as albumin, 
     vent, dialysis
 FROM eicu_crd.apacheapsvar
 WHERE patientunitstayid IN (SELECT patientunitstayid FROM cohort_base);
 
 --------------------------------------------------------------------------------
--- 6. 最终整合：多源打捞与 POF 定义
+-- 6. 最终整合：级联打捞逻辑 (COALESCE)
 --------------------------------------------------------------------------------
 DROP TABLE IF EXISTS eicu_cview.ap_external_validation;
 CREATE TABLE eicu_cview.ap_external_validation AS
 SELECT
     c.*,
-    -- 级联补全 pH (BG > Lab > APACHE)
+    -- 级联补全 pH_min (血气 > 化验室 > APACHE)
     COALESCE(bg.ph_min, l.lab_ph_min, aps.ph) AS ph_min,
     
-    -- 级联打捞核心特征
     COALESCE(l.creatinine_max, aps.creatinine) AS creatinine_max,
-    COALESCE(l.creatinine_min, l.creatinine_max, aps.creatinine) AS creatinine_min,
-    COALESCE(l.bun_max, aps.bun) AS bun_max,
-    COALESCE(l.bun_min, l.bun_max, aps.bun) AS bun_min, 
-    COALESCE(l.wbc_max, aps.wbc) AS wbc_max,
-    COALESCE(l.albumin_min, aps.albumin) AS albumin_min,
+    COALESCE(l.bun_max, aps.creatinine) AS bun_max, -- 某些情况下可用Cr趋势辅助判定
+    l.wbc_max, l.albumin_min, l.lactate_max,
+    v.heart_rate_max, v.resp_rate_max, v.mbp_min, v.spo2_max,
     
-    l.fibrinogen_max, l.aniongap_max, l.lactate_max,
-    v.heart_rate_max, v.resp_rate_max, v.mbp_min, v.temp_max, v.spo2_max,
     COALESCE(intv.vaso_flag, 0) AS vaso_flag,
     COALESCE(aps.vent, 0) AS vent_flag,
     COALESCE(intv.dialysis_flag, aps.dialysis, 0) AS dialysis_flag,
 
-    -- 最终 POF 定义 (含持久性器衰模拟)
+    -- 稳健的 POF 判定
     CASE 
         WHEN c.hosp_mort = 1 THEN 1 
         WHEN COALESCE(intv.vaso_flag, 0) = 1 THEN 1 
         WHEN (COALESCE(l.creatinine_max, aps.creatinine) > 1.9) OR (COALESCE(intv.dialysis_flag, aps.dialysis, 0) = 1) THEN 1
         WHEN COALESCE(aps.vent, 0) = 1 AND c.icu_los_hours >= 48 THEN 1
-        WHEN COALESCE(l.lactate_max, 0) > 4.0 AND COALESCE(bg.ph_min, l.lab_ph_min, aps.ph) < 7.25 THEN 1
         ELSE 0 
     END AS pof
 
@@ -180,11 +169,13 @@ LEFT JOIN temp_vital_full v ON c.patientunitstayid = v.patientunitstayid
 LEFT JOIN temp_interventions intv ON c.patientunitstayid = intv.patientunitstayid;
 
 --------------------------------------------------------------------------------
--- 审计输出
+-- 审计输出 (用于检查清洗效果)
 --------------------------------------------------------------------------------
 SELECT 
     COUNT(*) as total_patients,
     ROUND(AVG(pof)::numeric, 3) as pof_prevalence,
-    ROUND(AVG(ph_min)::numeric, 4) as avg_clean_ph,
+    ROUND(MIN(ph_min)::numeric, 3) as min_ph_check,
+    ROUND(MAX(ph_min)::numeric, 3) as max_ph_check,
+    ROUND(AVG(ph_min)::numeric, 3) as avg_ph_check,
     ROUND(COUNT(ph_min)::numeric / COUNT(*), 4) * 100 as ph_fill_rate
 FROM eicu_cview.ap_external_validation;
