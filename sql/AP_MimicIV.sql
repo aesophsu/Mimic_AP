@@ -1,5 +1,5 @@
 --------------------------------------------------------------------------------
--- 1. First materialize AP diagnoses (ICD-9: 5770, ICD-10: K85%)
+-- 1. AP 诊断提取 (保持不变)
 --------------------------------------------------------------------------------
 DROP TABLE IF EXISTS temp_ap_patients;
 CREATE TEMP TABLE temp_ap_patients AS
@@ -14,12 +14,11 @@ WHERE (icd_version = 9 AND icd_code = '5770')
 GROUP BY hadm_id, subject_id;
 
 --------------------------------------------------------------------------------
--- 2. Core cohort base (With Global Height Back-filling)
+-- 2. 队列基础表
 --------------------------------------------------------------------------------
 DROP TABLE IF EXISTS cohort_base;
 CREATE TEMP TABLE cohort_base AS
 WITH height_global AS (
-    -- 取该病人所有记录的中位数，显著提升 BMI 覆盖率
     SELECT subject_id, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY height) as height_global
     FROM mimiciv_derived.height
     GROUP BY subject_id
@@ -34,19 +33,20 @@ icu_ranked AS (
 ),
 demographics AS (
     SELECT 
-        pat.subject_id, pat.gender, pat.dod,
-        pat.anchor_year, pat.anchor_age
+        pat.subject_id, 
+        CASE WHEN pat.gender = 'M' THEN 1 ELSE 0 END AS gender_num, 
+        pat.dod, pat.anchor_year, pat.anchor_age
     FROM mimiciv_hosp.patients pat
 )
 SELECT 
     ir.subject_id, ir.hadm_id, ir.stay_id, ir.intime, ir.los,
     adm.admittime, adm.dischtime, adm.deathtime,
-    adm.insurance, adm.race, d.dod, d.gender,
+    adm.insurance, adm.race, d.dod, d.gender_num,
     (EXTRACT(YEAR FROM ir.intime) - d.anchor_year + d.anchor_age) AS admission_age,
     ap.alcoholic_ap, ap.biliary_ap, ap.hyperlipidemic_ap, ap.drug_induced_ap,
     w.weight AS weight_admit,
     COALESCE(h.height, hg.height_global) AS height_admit,
-    CASE WHEN COALESCE(h.height, hg.height_global) > 0 
+    CASE WHEN COALESCE(h.height, hg.height_global) BETWEEN 50 AND 250 
          THEN w.weight / power(COALESCE(h.height, hg.height_global) / 100, 2) 
          ELSE NULL END AS bmi
 FROM icu_ranked ir
@@ -60,7 +60,7 @@ WHERE ir.stay_seq = 1
   AND (EXTRACT(YEAR FROM ir.intime) - d.anchor_year + d.anchor_age) >= 18;
 
 --------------------------------------------------------------------------------
--- 3. Optimized POF (Persistent Organ Failure)
+-- 3. POF 逻辑
 --------------------------------------------------------------------------------
 DROP TABLE IF EXISTS pof_results;
 CREATE TEMP TABLE pof_results AS
@@ -73,7 +73,7 @@ WITH sofa_daily AS (
         MAX(s.renal)           AS renal
     FROM mimiciv_derived.sofa s
     INNER JOIN cohort_base c ON s.stay_id = c.stay_id
-    WHERE s.starttime >= c.intime + INTERVAL '24 hours'   -- ⭐关键
+    WHERE s.starttime >= c.intime + INTERVAL '24 hours' 
       AND s.starttime <  c.intime + INTERVAL '7 days'
     GROUP BY s.stay_id, DATE_TRUNC('day', s.starttime)
 ),
@@ -89,105 +89,58 @@ organ_pof AS (
 SELECT * FROM organ_pof;
 
 --------------------------------------------------------------------------------
--- 4. Batch lab slopes (Optimized: Admission to 24h post-ICU)
+-- 4. 核心实验室指标与生命体征 (已修正 hadm_id 重复问题)
 --------------------------------------------------------------------------------
-DROP TABLE IF EXISTS temp_lab_slopes;
-CREATE TEMP TABLE temp_lab_slopes AS
+DROP TABLE IF EXISTS temp_lab_vital_agg;
+CREATE TEMP TABLE temp_lab_vital_agg AS
 WITH lab_agg AS (
     SELECT 
         le.hadm_id,
-        AVG(CASE WHEN itemid IN (51256, 52075) THEN valuenum END) AS neutrophils_mean,
-        AVG(CASE WHEN itemid IN (51244, 51133) THEN valuenum END) AS lymphocytes_mean,
-        MAX(CASE WHEN itemid IN (50915, 51196, 52551) THEN valuenum END) AS d_dimer_max,
         MAX(CASE WHEN itemid = 51214 THEN valuenum END) AS fibrinogen_max,
-        MAX(CASE WHEN itemid = 50954 THEN valuenum END) AS ldh_max,
+        MIN(CASE WHEN itemid IN (50820, 50831) AND valuenum BETWEEN 6.5 AND 8.0 THEN valuenum END) AS ph_min,
+        MAX(CASE WHEN itemid IN (50820, 50831) AND valuenum BETWEEN 6.5 AND 8.0 THEN valuenum END) AS d_dimer_max,
         MAX(CASE WHEN itemid = 50889 THEN valuenum END) AS crp_max,
-        MAX(CASE WHEN itemid IN (50867, 53087) THEN valuenum END) AS amylase_max,
-        MAX(CASE WHEN itemid = 50956 THEN valuenum END) AS lipase_max,
-        MIN(CASE WHEN itemid IN (50931, 50809, 52569) THEN valuenum END) AS glucose_lab_min,
-        MAX(CASE WHEN itemid IN (50931, 50809, 52569) THEN valuenum END) AS glucose_lab_max,
-        (MAX(CASE WHEN itemid IN (50931, 50809, 52569) THEN valuenum END) - 
-         MIN(CASE WHEN itemid IN (50931, 50809, 52569) THEN valuenum END)) / 
-        NULLIF(EXTRACT(EPOCH FROM (MAX(CASE WHEN itemid IN (50931, 50809, 52569) THEN charttime END) - 
-                                   MIN(CASE WHEN itemid IN (50931, 50809, 52569) THEN charttime END)))/3600, 0) AS glucose_slope,
-        MAX(CASE WHEN itemid = 51000 THEN valuenum END) AS triglycerides_max,
-        MIN(CASE WHEN itemid = 50907 THEN valuenum END) AS total_cholesterol_min,
-        MAX(CASE WHEN itemid IN (51277, 52172) THEN valuenum END) AS rdw_max,
-        MIN(CASE WHEN itemid IN (50970) THEN valuenum END) AS phosphate_min,
-        MIN(CASE WHEN itemid IN (50893, 50808) THEN valuenum END) AS calcium_min
+        MIN(CASE WHEN itemid IN (50893, 50808) THEN valuenum END) AS calcium_min,
+        MIN(CASE WHEN itemid = 50970 THEN valuenum END) AS phosphate_min
     FROM mimiciv_hosp.labevents le
     INNER JOIN cohort_base c ON le.hadm_id = c.hadm_id
     WHERE le.charttime >= (c.admittime - INTERVAL '6 hours') 
       AND le.charttime <= (c.intime + INTERVAL '24 hours')
-      AND le.valuenum IS NOT NULL
-      AND itemid IN (51256, 52075, 51244, 51133, 50915, 51196, 52551, 51214, 50954, 
-                     50889, 50867, 53087, 50956, 50931, 50809, 52569, 51000, 50907, 
-                     51277, 52172, 50970, 50893, 50808)
     GROUP BY le.hadm_id
-),
-bg_agg AS (
-    SELECT 
-        bg.hadm_id,
-        MIN(bg.lactate) AS lactate_min,
-        MAX(bg.lactate) AS lactate_max,
-        (MAX(bg.lactate) - MIN(bg.lactate)) / 
-        NULLIF(EXTRACT(EPOCH FROM (MAX(bg.charttime) - MIN(bg.charttime)))/3600, 0) AS lactate_slope
-    FROM mimiciv_derived.bg bg
-    INNER JOIN cohort_base c ON bg.hadm_id = c.hadm_id
-    WHERE bg.charttime BETWEEN c.intime AND c.intime + INTERVAL '24 hours'
-      AND bg.lactate IS NOT NULL
-    GROUP BY bg.hadm_id
 ),
 vital_agg AS (
     SELECT 
         ce.stay_id,
-        MIN(CASE WHEN itemid=220277 THEN valuenum END) AS spo2_min,
-        MAX(CASE WHEN itemid=220277 THEN valuenum END) AS spo2_max,
-        (MAX(CASE WHEN itemid=220277 THEN valuenum END) - MIN(CASE WHEN itemid=220277 THEN valuenum END)) / 
-        NULLIF(EXTRACT(EPOCH FROM (MAX(CASE WHEN itemid=220277 THEN charttime END) - MIN(CASE WHEN itemid=220277 THEN charttime END)))/3600, 0) AS spo2_slope
+        MAX(CASE WHEN itemid IN (220045) THEN valuenum END) AS heart_rate_max,
+        MAX(CASE WHEN itemid IN (223761, 223762) THEN (CASE WHEN itemid=223761 THEN (valuenum-32)/1.8 ELSE valuenum END) END) AS temp_max,
+        MAX(CASE WHEN itemid IN (220277) THEN valuenum END) AS spo2_max
     FROM mimiciv_icu.chartevents ce
     INNER JOIN cohort_base c ON ce.stay_id = c.stay_id
-    WHERE ce.itemid = 220277 
+    WHERE ce.itemid IN (220045, 223761, 223762, 220277)
       AND ce.charttime BETWEEN c.intime AND c.intime + INTERVAL '24 hours'
-      AND ce.valuenum IS NOT NULL
     GROUP BY ce.stay_id
+),
+bg_agg AS (
+    SELECT 
+        bg.hadm_id,
+        MAX(bg.lactate) AS lactate_max
+    FROM mimiciv_derived.bg bg
+    INNER JOIN cohort_base c ON bg.hadm_id = c.hadm_id
+    WHERE bg.charttime BETWEEN c.intime AND c.intime + INTERVAL '24 hours'
+    GROUP BY bg.hadm_id
 )
 SELECT 
-    c.hadm_id,
-    l.neutrophils_mean, l.lymphocytes_mean, l.d_dimer_max, l.fibrinogen_max, l.ldh_max,
-    l.crp_max, l.amylase_max, l.lipase_max, l.glucose_lab_min, l.glucose_lab_max, l.glucose_slope,
-    l.triglycerides_max, l.total_cholesterol_min, l.rdw_max, l.phosphate_min, l.calcium_min,
-    CASE WHEN l.lymphocytes_mean > 0 THEN l.neutrophils_mean / l.lymphocytes_mean ELSE NULL END AS nlr,
-    b.lactate_min, b.lactate_max, b.lactate_slope,
-    v.spo2_min, v.spo2_max, v.spo2_slope
+    c.stay_id, -- 只保留核心 ID 用于后续 Join
+    l.fibrinogen_max, l.ph_min, l.d_dimer_max, l.crp_max, l.calcium_min, l.phosphate_min,
+    v.heart_rate_max, v.temp_max, v.spo2_max,
+    b.lactate_max
 FROM cohort_base c
 LEFT JOIN lab_agg l ON c.hadm_id = l.hadm_id
-LEFT JOIN bg_agg b ON c.hadm_id = b.hadm_id
-LEFT JOIN vital_agg v ON c.stay_id = v.stay_id;
+LEFT JOIN vital_agg v ON c.stay_id = v.stay_id
+LEFT JOIN bg_agg b ON c.hadm_id = b.hadm_id;
 
 --------------------------------------------------------------------------------
--- 5. Batch comorbidities
---------------------------------------------------------------------------------
-DROP TABLE IF EXISTS temp_comorbidities;
-CREATE TEMP TABLE temp_comorbidities AS
-SELECT 
-    c.hadm_id,
-    MAX(CASE WHEN icd_code LIKE '428%' OR icd_code LIKE 'I50%' THEN 1 ELSE 0 END) AS heart_failure,
-    MAX(CASE WHEN icd_code LIKE '4273%' OR icd_code LIKE 'I48%' THEN 1 ELSE 0 END) AS atrial_fibrillation,
-    MAX(CASE WHEN icd_code LIKE '585%' OR icd_code LIKE 'N18%' THEN 1 ELSE 0 END) AS chronic_kidney_disease,
-    MAX(CASE WHEN icd_code LIKE '491%' OR icd_code LIKE '492%' OR icd_code LIKE '496%'
-           OR icd_code LIKE 'J44%' OR icd_code LIKE 'J43%' THEN 1 ELSE 0 END) AS copd,
-    MAX(CASE WHEN icd_code LIKE '410%' OR icd_code LIKE '411%' OR icd_code LIKE '414%'
-           OR icd_code LIKE 'I20%' OR icd_code LIKE 'I25%' THEN 1 ELSE 0 END) AS coronary_heart_disease,
-    MAX(CASE WHEN icd_code LIKE '433%' OR icd_code LIKE '434%' OR icd_code LIKE '436%'
-           OR icd_code LIKE 'I63%' OR icd_code LIKE 'I64%' THEN 1 ELSE 0 END) AS stroke,
-    MAX(CASE WHEN icd_code LIKE '14%' OR icd_code LIKE '15%' OR icd_code LIKE 'C%' THEN 1 ELSE 0 END) AS malignant_tumor
-FROM mimiciv_hosp.diagnoses_icd d
-INNER JOIN cohort_base c ON d.hadm_id = c.hadm_id
-GROUP BY c.hadm_id;
-
---------------------------------------------------------------------------------
--- 6. Interventions
+-- 5. 干预措施 (补全缺失的临时表)
 --------------------------------------------------------------------------------
 DROP TABLE IF EXISTS temp_interventions;
 CREATE TEMP TABLE temp_interventions AS
@@ -203,61 +156,34 @@ LEFT JOIN mimiciv_derived.vasoactive_agent vaso ON c.stay_id = vaso.stay_id
 GROUP BY c.stay_id;
 
 --------------------------------------------------------------------------------
--- 7. Final Integration
+-- 7. 最终集成
 --------------------------------------------------------------------------------
 DROP TABLE IF EXISTS my_custom_schema.ap_final_analysis_cohort;
 CREATE TABLE my_custom_schema.ap_final_analysis_cohort AS
 SELECT
-    c.*,
+    c.subject_id, c.hadm_id, c.stay_id, c.intime, c.los,
+    c.admission_age, c.gender_num, c.weight_admit, c.bmi,
+    c.alcoholic_ap, c.biliary_ap, c.hyperlipidemic_ap, c.drug_induced_ap,
+    
+    CASE WHEN (COALESCE(p.resp_pof,0) + COALESCE(p.cv_pof,0) + COALESCE(p.renal_pof,0)) > 0 THEN 1 ELSE 0 END AS pof,
+    
+    lab.creatinine AS creatinine_max,
+    lab.bun AS bun_max,
+    lab.wbc AS wbc_max,
+    lab.aniongap AS aniongap_max,
+    lab.glucose AS glucose_max,
+    lab.ptt AS ptt_max,
 
-    -- Outcomes
-    CASE WHEN (COALESCE(p.resp_pof,0)
-             + COALESCE(p.cv_pof,0)
-             + COALESCE(p.renal_pof,0)) > 0
-         THEN 1 ELSE 0 END AS pof,
+    lv.ph_min, lv.fibrinogen_max, lv.lactate_max, lv.heart_rate_max, lv.temp_max, lv.spo2_max,
 
-    p.resp_pof,
-    p.cv_pof,
-    p.renal_pof,
-
-    CASE
-        WHEN COALESCE(c.deathtime, c.dod)
-             <= (c.intime + INTERVAL '28 days')
-        THEN 1 ELSE 0
-    END AS mortality_28d,
-
-    -- ❌ 不再包含 sofa_score
-
-    -- Scores (optional, for comparator only)
-    apsiii.apsiii,
-    sapsii.sapsii,
-    oasis.oasis,
-    lods.lods,
-
-    -- First 24h labs
-    lab.*,
-
-    -- AP-specific ML features
-    ls.*,
-
-    -- Interventions & Comorbidities
     COALESCE(intv.mechanical_vent_flag,0) AS mechanical_vent_flag,
-    COALESCE(intv.vaso_flag,0)            AS vaso_flag,
-    COALESCE(com.heart_failure,0)         AS heart_failure,
-    COALESCE(com.chronic_kidney_disease,0)AS chronic_kidney_disease,
-    COALESCE(com.malignant_tumor,0)        AS malignant_tumor
+    COALESCE(intv.vaso_flag,0) AS vaso_flag
 
 FROM cohort_base c
-LEFT JOIN pof_results p      ON c.stay_id = p.stay_id
-LEFT JOIN mimiciv_derived.apsiii apsiii ON c.stay_id = apsiii.stay_id
-LEFT JOIN mimiciv_derived.sapsii sapsii ON c.stay_id = sapsii.stay_id
-LEFT JOIN mimiciv_derived.oasis oasis   ON c.stay_id = oasis.stay_id
-LEFT JOIN mimiciv_derived.lods lods     ON c.stay_id = lods.stay_id
+LEFT JOIN pof_results p ON c.stay_id = p.stay_id
 LEFT JOIN mimiciv_derived.first_day_lab lab ON c.stay_id = lab.stay_id
-LEFT JOIN temp_lab_slopes ls ON c.hadm_id = ls.hadm_id
-LEFT JOIN temp_interventions intv ON c.stay_id = intv.stay_id
-LEFT JOIN temp_comorbidities com  ON c.hadm_id = com.hadm_id;
+LEFT JOIN temp_lab_vital_agg lv ON c.stay_id = lv.stay_id
+LEFT JOIN temp_interventions intv ON c.stay_id = intv.stay_id;
 
-
--- Final Output
-SELECT 'AP Cohort extraction complete. Rows created:' AS status, COUNT(*) FROM my_custom_schema.ap_final_analysis_cohort;
+-- 验证最终行数
+SELECT COUNT(*) FROM my_custom_schema.ap_final_analysis_cohort;
