@@ -1,5 +1,43 @@
 # 研究流程整理（终极闭环版）
 
+---
+
+### 📂 研究流程：SQL 层面的深度对齐 (Cross-database SQL Engineering)
+
+#### **第零阶段：数据仓库挖掘与队列构建 (SQL Data Mining)**
+
+*这是研究的基石，通过结构化查询语言直接在 MIMIC-IV 数据库中定义临床实体。*
+
+* **模块 00-A: 自动化队列提取与结局定义 (SQL Implementation)**
+* **疾病识别 (AP Diagnosis)**：利用 ICD-9（5770）和 ICD-10（K85）代码精准识别 AP 患者，并细分为酒精性、胆源性、高脂血症性和药源性四大亚型。
+* **POF 结局标签构建 (POF Gold Standard)**：
+* **逻辑**：基于修正的 Marshall 评分标准，提取 ICU 入院 24 小时后至 7 天内的 **SOFA 评分**。
+* **判定**：通过 SQL 实现“持续性”判定，即呼吸、循环或肾脏系统中任意一个系统的 SOFA 分数  且持续时间  小时。
+
+
+* **多维数据整合**：从 `chartevents`（生命体征）、`labevents`（生化指标）和 `derived`（派生表）中横向集成入院 24 小时内的临床全貌。
+* **产出**：生成结构化母表 `ap_final_analysis_cohort`。
+
+
+#### **模块 00-B: eICU 多中心数据特征审计与对齐 (SQL Level)**
+
+* **精细化单位清洗 (Unit Auditing)**：
+* **肌酐 (Creatinine)**：通过 `>30` 的逻辑判定，自动识别并校准 `umol/L` 与 `mg/dL`，抹平了多中心数据最常见的量纲陷阱。
+* **温度 (Temperature)**：内置华氏度与摄氏度的自动识别转换逻辑，确保生理指标的物理一致性。
+
+
+* **pH 值多维度打捞 (pH Recovery Logic)**：
+* 这是本研究的重大亮点。pH 是 AP-POF 预测的核心，但在 eICU 中缺失率极高。
+* 你的 SQL 实现了 **“直接提取 (Lab) -> 血气打捞 (BG) -> 公式计算 (Henderson-Hasselbalch) -> APACHE 兜底”** 的四级打捞机制，极大提升了模型在外部验证集的完整度。
+
+
+* **POF 结局的“跨库模拟” (Outcome Emulation)**：
+* eICU 不像 MIMIC 那样有现成的持续器官衰竭评分。你通过 `CarePlan`（护理计划）、`Treatment`（治疗）结合 `ICU_LOS`（住院时间）巧妙地模拟了 **“持续性（Persistence）”**：
+* **呼吸衰竭**：机械通气且 ICU 时长 （排除术后常规插管）。
+* **循环衰竭**：使用升压药且 ICU 时长 。
+
+
+
 ## 第一阶段：数据治理与临床场景构建 (Data Engineering)
 
 ### 模块 01: 原始数据清洗与跨库单位校准 (Data Cleaning & Unit Harmonization)
