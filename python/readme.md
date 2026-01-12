@@ -1,42 +1,39 @@
 # 研究流程整理（终极闭环版）
 
----
 
 ### 📂 研究流程：SQL 层面的深度对齐 (Cross-database SQL Engineering)
 
 #### **第零阶段：数据仓库挖掘与队列构建 (SQL Data Mining)**
-
 *这是研究的基石，通过结构化查询语言直接在 MIMIC-IV 数据库中定义临床实体。*
 
 * **模块 00-A: 自动化队列提取与结局定义 (SQL Implementation)**
-* **疾病识别 (AP Diagnosis)**：利用 ICD-9（5770）和 ICD-10（K85）代码精准识别 AP 患者，并细分为酒精性、胆源性、高脂血症性和药源性四大亚型。
-* **POF 结局标签构建 (POF Gold Standard)**：
-* **逻辑**：基于修正的 Marshall 评分标准，提取 ICU 入院 24 小时后至 7 天内的 **SOFA 评分**。
-* **判定**：通过 SQL 实现“持续性”判定，即呼吸、循环或肾脏系统中任意一个系统的 SOFA 分数  且持续时间  小时。
-
-
-* **多维数据整合**：从 `chartevents`（生命体征）、`labevents`（生化指标）和 `derived`（派生表）中横向集成入院 24 小时内的临床全貌。
-* **产出**：生成结构化母表 `ap_final_analysis_cohort`。
-
+  - **核心内容**：
+    - 疾病识别 (AP Diagnosis)：利用 ICD-9（5770）和 ICD-10（K85）代码精准识别 AP 患者，并细分为酒精性、胆源性、高脂血症性和药源性四大亚型。
+    - POF 结局标签构建 (POF Gold Standard)：
+      - **逻辑**：基于修正的 Marshall 评分标准，提取 ICU 入院 24 小时后至 7 天内的 **SOFA 评分**。
+      - **判定**：通过 SQL 实现“持续性”判定，即呼吸、循环或肾脏系统中任意一个系统的 SOFA 分数 且持续时间 小时。
+    - 多维数据整合：从 `chartevents`（生命体征）、`labevents`（生化指标）和 `derived`（派生表）中横向集成入院 24 小时内的临床全貌。
+  - **产出**：生成结构化母表 `ap_final_analysis_cohort`。
+  - **审计笔记**：
+    - 这模块奠定了队列的临床准确性。在论文 Methods 中可强调：“We employed SQL-based cohort extraction to ensure precise identification of AP subtypes and POF outcomes, minimizing selection bias.”
+    - 与后续模块衔接：生成的母表直接喂入模块 01 的清洗流程，确保数据从源头到建模的连续性。
 
 #### **模块 00-B: eICU 多中心数据特征审计与对齐 (SQL Level)**
-
-* **精细化单位清洗 (Unit Auditing)**：
-* **肌酐 (Creatinine)**：通过 `>30` 的逻辑判定，自动识别并校准 `umol/L` 与 `mg/dL`，抹平了多中心数据最常见的量纲陷阱。
-* **温度 (Temperature)**：内置华氏度与摄氏度的自动识别转换逻辑，确保生理指标的物理一致性。
-
-
-* **pH 值多维度打捞 (pH Recovery Logic)**：
-* 这是本研究的重大亮点。pH 是 AP-POF 预测的核心，但在 eICU 中缺失率极高。
-* 你的 SQL 实现了 **“直接提取 (Lab) -> 血气打捞 (BG) -> 公式计算 (Henderson-Hasselbalch) -> APACHE 兜底”** 的四级打捞机制，极大提升了模型在外部验证集的完整度。
-
-
-* **POF 结局的“跨库模拟” (Outcome Emulation)**：
-* eICU 不像 MIMIC 那样有现成的持续器官衰竭评分。你通过 `CarePlan`（护理计划）、`Treatment`（治疗）结合 `ICU_LOS`（住院时间）巧妙地模拟了 **“持续性（Persistence）”**：
-* **呼吸衰竭**：机械通气且 ICU 时长 （排除术后常规插管）。
-* **循环衰竭**：使用升压药且 ICU 时长 。
-
-
+  - **核心内容**：
+    - 精细化单位清洗 (Unit Auditing)：
+      - **肌酐 (Creatinine)**：通过 `>30` 的逻辑判定，自动识别并校准 `umol/L` 与 `mg/dL`，抹平了多中心数据最常见的量纲陷阱。
+      - **温度 (Temperature)**：内置华氏度与摄氏度的自动识别转换逻辑，确保生理指标的物理一致性。
+    - pH 值多维度打捞 (pH Recovery Logic)：
+      - 这是本研究的重大亮点。pH 是 AP-POF 预测的核心，但在 eICU 中缺失率极高。
+      - 你的 SQL 实现了 **“直接提取 (Lab) -> 血气打捞 (BG) -> 公式计算 (Henderson-Hasselbalch) -> APACHE 兜底”** 的四级打捞机制，极大提升了模型在外部验证集的完整度。
+    - POF 结局的“跨库模拟” (Outcome Emulation)：
+      - eICU 不像 MIMIC 那样有现成的持续器官衰竭评分。你通过 `CarePlan`（护理计划）、`Treatment`（治疗）结合 `ICU_LOS`（住院时间）巧妙地模拟了 **“持续性（Persistence）”**：
+      - **呼吸衰竭**：机械通气且 ICU 时长 （排除术后常规插管）。
+      - **循环衰竭**：使用升压药且 ICU 时长 。
+  - **产出**：生成对齐后的 eICU 数据集，供后续外部验证使用。
+  - **审计笔记**：
+    - 方法论亮点：pH 打捞机制可作为论文的创新点描述：“To address high missingness in eICU, we implemented a multi-tier pH recovery algorithm, increasing data completeness by [X]%.”
+    - 跨库一致性：这模块直接支撑模块 07/08 的外部验证，确保 eICU 数据在 SQL 层面已与 MIMIC 对齐，减少分布偏移。
 
 ## 第一阶段：数据治理与临床场景构建 (Data Engineering)
 
@@ -116,7 +113,6 @@
   - 图表闭环：作为论文插图。
 
 ## 第四阶段：外部验证与跨库审计 (External Validation & Cross-cohort Auditing)
-（注：原描述中未明确第四阶段，但基于逻辑推断，此阶段聚焦外部验证。）
 
 ### 模块 07: 外部数据库对齐与特征审计 (External Data Mapping & Auditing)
 - **核心内容**：
@@ -187,14 +183,15 @@
   - 易理解性：OR 值便于医生解读。
 
 ## 🏁 研究全流程（终极闭环版）
-1. **数据清洗** (MIMIC/eICU 单位统一)。
-2. **特征工程** (Log 转换、MICE 插补)。
-3. **算法竞赛** (5 种模型、贝叶斯优化、概率校准)。
-4. **内验证** (ROC 曲线、SHAP 归因)。
-5. **诊断效能** (约登指数、Cut-off 确定)。
-6. **统计描述** (Table 1 基线、单因素分析)。
-7. **外验证** (eICU 对齐、泛化性能评估)。
-8. **人群对比** (SMD 审计)。
-9. **临床价值** (DCA 净获益分析)。
-10. **稳健性审计** (VIF 共线性检测)。
-11. **可靠性评估** (校准曲线与诺莫图)。
+1. **数据仓库挖掘** (SQL 队列提取、结局定义、跨库对齐)。
+2. **数据清洗** (MIMIC/eICU 单位统一)。
+3. **特征工程** (Log 转换、MICE 插补)。
+4. **算法竞赛** (5 种模型、贝叶斯优化、概率校准)。
+5. **内验证** (ROC 曲线、SHAP 归因)。
+6. **诊断效能** (约登指数、Cut-off 确定)。
+7. **统计描述** (Table 1 基线、单因素分析)。
+8. **外验证** (eICU 对齐、泛化性能评估)。
+9. **人群对比** (SMD 审计)。
+10. **临床价值** (DCA 净获益分析)。
+11. **稳健性审计** (VIF 共线性检测)。
+12. **可靠性评估** (校准曲线与诺莫图)。
