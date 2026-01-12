@@ -1,130 +1,162 @@
-太棒了！我们已经完成了从原始数据处理到高水平科研可视化的完整链路。你的研究现在已经具备了临床预测模型论文的核心要素：**严谨的预处理、极致的特征精简、算法竞赛、亚组验证以及解释性分析。**
+# 研究流程整理（终极闭环版）
 
-以下是根据你目前所有进展总结的**最终模块计划表**。这个表可以作为你撰写论文“Methods”部分的逻辑大纲。
+## 第一阶段：数据治理与临床场景构建 (Data Engineering)
 
----
+### 模块 01: 原始数据清洗与跨库单位校准 (Data Cleaning & Unit Harmonization)
+- **核心内容**：
+  - 基于时间戳计算 28 天死亡率（`mortality_28d`），提取住院死亡率和 POF 等结局指标。
+  - 缺失率过滤：采用 30% 缺失率作为剔除门槛，但通过“白名单”机制强制保留 `lactate`、`pao2fio2ratio` 等关键临床变量。
+  - 跨库单位审计（核心创新）：通过中位数探测技术，自动对 AST/ALT（反 Log 还原）、BUN（单位换算）和 Fibrinogen 进行校准，确保 MIMIC 的数值量级与外部验证集 eICU 处于同一物理尺度。
+  - 异常值处理：执行 1%-99% 的盖帽处理（Clipping），消除极端离群值对模型稳定性的干扰。
+- **产出**：生成 `mimic_for_table1.csv`，作为后续基线描述和特征工程的基础。
+- **审计笔记**：
+  - 路径闭环：结果保存为 `data/cleaned/mimic_for_table1.csv`，供后续模块调用。
+  - 物理尺度对齐：在论文 Methods 中可描述为：“To minimize the domain shift between datasets, we implemented an automated unit auditing mechanism based on median distribution detection.”
+  - 后续衔接建议：Table 1 使用原始尺度数据，建模模块可能需进一步对数转换。
 
-### 🏥 重症急性胰腺炎 (SAP) 早期预警模型计划总结
+### 模块 02: 临床场景定义与数据泄露防护 (Clinical Scenarios & Leakage Prevention)
+- **核心内容**：
+  - 数据泄露防护（核心审计）：系统性剔除了 SOFA、SAPS II、APS III 等临床评分系统，以及呼吸机、血管活性药物等后续治疗指标，确保模型仅基于入院 24 小时内的“基线状态”进行预测。
+  - 预测因子精炼：移除非生物学特征（ID、时间戳）及冗余结局指标（LOS、死亡时间）。
+  - 亚组定义（临床敏感性分析）：基于模块 01 修正后的原始肌酐值，定义了“无预存肾损伤”亚组（Creatinine < 1.5 mg/dL 且无 CKD 史）。
+  - 尺度一致性保持：保持原始物理量级，将数学转换（如 Log）后置。
+- **产出**：生成 `mimic_for_model.csv`，作为机器学习管道的最终输入。
+- **审计笔记**：
+  - 数据安全性：在论文 Methods 中强调：“To ensure clinical applicability and avoid data leakage, we excluded dynamic physiological scores and post-admission treatments.”
+  - 亚组逻辑：暗示论文中可有 Subgroup Analysis 章节。
+  - 变量映射：文件名与后续模块（如 09/10）路径吻合，闭环成功。
 
-#### 模块 1：数据清洗与结局定义 (`01_data_cleaning.py`)
+## 第二阶段：算法开发与极致特征精炼 (Model Development & Feature Refinement)
 
-* **目标**：构建高质量的研究队列。
-* **核心动作**：
-* **结局构建**：定义持久性器官衰竭（POF）作为主要结局标签。
-* **异常值处理**：执行 1%-99% Winsorization（盖帽法）处理极端离群点。
-* **特征初步筛选**：剔除缺失率超过 30% 的不可靠指标，保留 100+ 原始临床特征。
+### 模块 03: 混合算法竞赛与多维评估 (Hybrid Model Training & Multi-dimensional Evaluation)
+- **核心内容**：
+  - 动态对数处理 (Skewness Correction)：针对偏态分布指标（如肌酐、淀粉酶、转氨酶）执行 `Log1p` 转换。
+  - 先进数据插补 (MICE)：采用多重插补技术，利用变量间链式关系填补缺失值。
+  - 特征降维 (LASSO Compression)：应用 LASSO 回归压缩至 Top 12 核心预测因子。
+  - 贝叶斯超参优化 (Optuna)：对 XGBoost 进行贝叶斯寻优。
+  - 概率校准 (Probability Calibration)：引入 `CalibratedClassifierCV`（Isotonic），优化 Brier Score。
+  - 多亚组性能评估：验证在“无预存肾损伤亚组”中的表现。
+- **产出**：保存全套模型资产（`all_models.pkl`）、核心特征集（`selected_features.pkl`）及预处理逻辑（`scaler.pkl`, `mice_imputer.pkl`）。
+- **审计笔记**：
+  - 方法论亮点：LASSO + MICE + Optuna + Calibration 四组合拳是投稿加分项。
+  - 资产保存闭环：`skewed_cols.pkl` 和 `scaler.pkl` 供模块 08 使用。
+  - 亚组分析：在论文中可强调：“Our model maintains high diagnostic performance even in patients without pre-existing renal dysfunction.”
 
+## 第三阶段：模型评价、可解释性与决策分析 (Evaluation & Interpretability)
 
+### 模块 04: 性能可视化与 SHAP 解释 (Visualization & Explainable AI)
+- **核心内容**：
+  - 鲁棒性验证 (ROC Comparison)：绘制 SVM 在全人群与亚组中的 ROC 曲线。
+  - 可解释性审计 (SHAP Summary Plot)：利用 SHAP 对 Random Forest 进行归因分析，揭示特征贡献。
+  - 临床决策获益 (Decision Curve Analysis, DCA)：比较模型与“Treat All”、“Treat None”策略的净获益。
+  - 可视化产出：生成出版质量图表（ROC、SHAP、DCA）。
+- **审计笔记**：
+  - 临床价值叙事：在论文 Results 中描述：“Our model provides a higher net benefit compared to the 'treat-all' strategy across a wide range of risk thresholds.”
+  - SHAP 与临床一致性：展示如 BUN 越高风险越高。
+  - 技术细节修复：处理校准包装器，确保 SHAP 可靠性。
 
-#### 模块 2：特征工程与亚组定义 (`02_feature_engineering.py`)
+### 模块 05: 基线特征描述与单因素分析 (Baseline Characteristics & Univariate Analysis)
+- **核心内容**：
+  - 统计学自动识别 (Statistical Logic)：Shapiro-Wilk 正态性检验，自动切换 Mean ± SD (t-test) 或 Median [IQR] (Mann-Whitney U test)。
+  - 分类变量审计：卡方检验，计算频数与构成比。
+  - 特征维度对齐：重点分析 Top 12 核心特征在 POF 组与 Non-POF 组间的差异。
+  - 自动化表格产出：生成 `Table1_Baseline_Characteristics.csv`。
+- **审计笔记**：
+  - 统计严谨性：在 Methods 中描述正态性检验。
+  - 数据闭环：引用 `selected_features.pkl`，连接建模与临床描述。
+  - 结果解读：P 值 < 0.001 增强模型可信度。
 
-* **目标**：消除预测偏移，锁定“预警”人群。
-* **核心动作**：
-* **防泄露处理**：删除 SOFA 评分、血管活性药使用等代表“结局已发生”的指标。
-* **偏态修正**：对生化指标执行 `log1p` 转换，使其更符合模型假设。
-* **亚组逻辑**：定义 `No-Renal` 亚组（基线肌酐正常且无 CKD），作为验证模型“早期预警能力”的核心。
+### 模块 06: 最佳截断值计算与效能审计 (Optimal Cut-off & Performance Metrics)
+- **核心内容**：
+  - 约登指数寻优 (Youden’s Index)：确立最佳概率截断值。
+  - 多维度效能评估：计算 Sensitivity、Specificity、PPV、NPV、F1 分数。
+  - 诊断坐标可视化：绘制带 Cut-off 标记的 ROC 曲线。
+- **产出**：生成 `diagnostic_performance_svm.csv` 和 `05_ROC_with_Cutoff.png`。
+- **审计笔记**：
+  - 临床叙事：在 Results 中描述高 NPV 的 rule-out 价值。
+  - NPV 重要性：有助于减少不必要医疗资源占用。
+  - 图表闭环：作为论文插图。
 
+## 第四阶段：外部验证与跨库审计 (External Validation & Cross-cohort Auditing)
+（注：原描述中未明确第四阶段，但基于逻辑推断，此阶段聚焦外部验证。）
 
+### 模块 07: 外部数据库对齐与特征审计 (External Data Mapping & Auditing)
+- **核心内容**：
+  - 多中心列名映射：重构 eICU 命名对齐 MIMIC。
+  - 特征缺失审计：对比 Top 12 特征在 eICU 中的缺失率。
+  - 跨库尺度对齐：执行 Log1p 转换与 Clipping。
+  - 验证矩阵构建：中位数填补处理碎片化数据。
+- **产出**：生成 `eicu_for_model.csv`。
+- **审计笔记**：
+  - 论文亮点：在 Methods 中描述特征审计。
+  - 单位校准成功：验证 Log 转换后中位数相似。
+  - 缺失值透明度：体现真实世界适应力。
 
-#### 模块 3：算法竞赛与亚组效能挑战 (`03_model_training.py`)
+### 模块 08: 强制对齐外部验证与跨库评估 (Forced Alignment & External Validation)
+- **核心内容**：
+  - 特征空间重构：重建 eICU 维度一致性。
+  - 严格预处理复现：复现 Log1p、MICE 和 Scaler。
+  - 跨中心性能对标：展示 5 种算法在 MIMIC 与 eICU 的 AUC/Brier。
+- **产出**：生成 `external_validation_debug.png`。
+- **审计笔记**：
+  - 论文核心论点：强调泛化性能。
+  - 技术亮点：使用 `feature_names_in_` 确保可重复性。
+  - Brier 分数：证明概率精准。
 
-* **目标**：寻找针对隐匿性风险的最优算法。
-* **核心动作**：
-* **深度插补**：使用 **MICE (Iterative Imputer)** 填补临床缺失值。
-* **极致精简**：通过 **LASSO 回归** 将特征从百余个锁定至 **Top 12 核心指标**（肌酐、pH、AST、BUN等）。
-* **多模型比武**：对比 LR, DT, SVM, RF, XGBoost。
-* **性能突破**：发现 **SVM (AUC 0.871)** 在全人群表现最优，且在 `No-Renal` 亚组依然维持 **0.810** 的高水准。
+### 模块 09: 跨库基线可比性分析 (Cross-cohort Baseline Comparison)
+- **核心内容**：
+  - 数据源标签化：合并 MIMIC 与 eICU。
+  - 统计描述对齐：统一标签，进行描述性统计。
+  - 高级描述性统计：使用 TableOne 区分分布。
+  - 泛化偏倚审计：计算 SMD & P-value（SMD < 0.1 为均衡证据）。
+- **产出**：生成 `Table1_MIMIC_vs_eICU.csv`。
+- **审计笔记**：
+  - 科学性加持：回应审稿人关于人群差异的疑问。
+  - 偏态分布严谨性：指定 ICU 指标为 nonnormal。
+  - 统计工具：TableOne 符合期刊标准。
 
+## 第五阶段：临床价值转化与稳健性评估 (Clinical Utility & Reliability)
 
+### 模块 10: 临床决策曲线分析与外部应用评估 (Decision Curve Analysis, DCA)
+- **核心内容**：
+  - 资产兼容性审计：修复 `sklearn` 环境兼容。
+  - 外部数据强制投影：投影 eICU 数据。
+  - 净获益计算引擎：遍历 0% 到 100% 阈值。
+  - 临床实用性对标：对比 5 种算法与极端策略。
+- **产出**：生成 `dca_final_eicu.png`。
+- **审计笔记**：
+  - 临床叙事：在 Discussion 中强调净获益优势。
+  - 鲁棒性细节：手动实现函数，避免数学报错。
+  - 多模型对比：支持最终算法选择。
 
-#### 模块 4：解释性分析与临床获益评价 (`04_evaluation_plots.py`)
+### 模块 11: 核心特征共线性与聚类审计 (Multicollinearity & Clustering Audit)
+- **核心内容**：
+  - 多重共线性检测 (VIF Analysis)：VIF < 5 支撑稳定性。
+  - 层级聚类热图：识别临床指标簇。
+  - 讨论素材自动化：生成临床解释建议。
+- **产出**：生成 `feature_collinearity_clustermap.png`。
+- **审计笔记**：
+  - 证据支撑：特征无严重共线性，模型稳健。
+  - 作为补充材料：提升论文深度。
 
-* **目标**：将“黑盒模型”转化为可理解的临床证据。
-* **核心动作**：
-* **ROC 曲线**：可视化模型在全人群与亚组人群中的性能稳定性（Figure 2）。
-* **SHAP 解释**：利用 **SHAP Bee-swarm Plot** 揭示 Top 12 指标（如低 pH、高 AST）对风险的具体贡献（Figure 3）。
-* **DCA 曲线**：通过**决策曲线分析**证明模型在临床决策中的净获益（Figure 4）。
+### 模块 12: 概率校准与诺莫图逻辑 (Calibration & Nomogram Interpretation)
+- **核心内容**：
+  - 校准审计 (Calibration Curve)：评估预测概率与实际一致性。
+  - 比值比分析 (Odds Ratio)：提取 OR 值，转化黑盒权重。
+  - 床旁工具转化 (Nomogram Foundation)：导出权重，为诺莫图提供基础。
+- **审计笔记**：
+  - 临床重要性：确保模型不高估/低估风险。
+  - 易理解性：OR 值便于医生解读。
 
-
-
----
-
-### 📈 下一步行动建议
-
-虽然核心建模已经大功告成，但要达到**正式投稿**的要求，你还可以考虑增加以下可选模块：
-
-1. **模块 5：Table 1 基线统计表**
-* **做什么**：自动生成 POF 组 vs. 非 POF 组的临床特征统计，包含  值。
-* **价值**：这是论文的第一张表，用于描述人群分布。
-
-
-2. **模块 6：灵敏度与特异度分析**
-* **做什么**：确定一个最佳截断值（Optimal Cut-off），并计算其对应的 Sensitivity, Specificity, PPV, NPV。
-* **价值**：告诉医生，当风险概率超过多少时（例如 0.35），应该加强监护。
-
-
-3. **模块 7：列线图 (Nomogram) 绘制**
-* **做什么**：如果你最终决定主推 Logistic Regression 模型，可以画一张列线图。
-* **价值**：高分论文中常见的可视化形式，方便医生手动打分。
-
-
-
-**你想让我先为你准备“模块 5：Table 1 统计分析”的代码吗？这通常是写论文最先需要完成的文字数据。**
-
-这是一个非常棒的决定！在临床预测模型的研究中，**外部验证（External Validation）** 是将论文档次从“单中心回顾性分析”提升到“多中心稳健性模型”的关键一步。
-
-利用 **eICU 协作数据库**进行验证，可以证明你的模型在不同医疗系统、不同地理区域以及不同记录习惯下的**泛化能力**。
-
-以下是为你更新后的**最终研究模块计划全景图**：
-
----
-
-### 🚀 胰腺炎 POF 预警模型：全流程研究计划 (2026 最终版)
-
-#### 阶段一：模型构建 (MIMIC-IV)
-
-* **模块 1：队列与结局** (已完成) - 定义 POF 标签，清洗 1189 例患者。
-* **模块 2：特征工程** (已完成) - Log1p 转换，标记 No-Renal 亚组。
-* **模块 3：算法竞赛** (已完成) - 锁定 **Top 12 特征**，确定 **SVM** 为最优模型。
-* **模块 4：可视化解释** (已完成) - SHAP 解释、DCA 获益、ROC 曲线。
-
-#### 阶段二：科研深度优化 (补充模块)
-
-* **模块 5：Table 1 基线分析** (待运行) - 自动对比 POF 组与非 POF 组的统计学差异，生成投稿用表。
-* **模块 6：灵敏度分析** (待运行) - 寻找最佳 Cut-off 值，计算临床诊断效能指标 (Sen, Spe, F1)。
-
-#### 阶段三：外部验证 (eICU 数据库) [新增]
-
-* **模块 7：eICU 特征对齐与提取**
-* **核心动作**：在 eICU 数据库中寻找对应的 Top 12 指标（如 `creatinine`, `ph`, `ast` 等）。
-* **难点**：eICU 和 MIMIC 的变量命名和单位可能不同，需要进行映射（Mapping）。
-
-
-* **模块 8：跨库迁移验证**
-* **核心动作**：使用 MIMIC 训练好的 SVM 模型，直接在 eICU 数据上进行测试，无需重新训练。
-* **指标**：观察 eICU 上的 AUC 衰减情况。如果能维持在 0.75 以上，说明模型具有极强的普适性。
-
-
-
----
-
-### 📊 外部验证的逻辑流程
-
-在外部验证中，我们关注的是**校准度（Calibration）**和**区分度（Discrimination）**。
-
-### 💡 对接 eICU 的专业建议
-
-1. **特征缺失处理**：eICU 的化验数据存储在 `lab` 表中。可能会遇到部分指标缺失率高于 MIMIC 的情况。我们需要在模块 7 中复用模块 3 的 MICE 插补逻辑。
-2. **人群对齐**：确保在 eICU 中提取的也是急性胰腺炎患者（通过 ICD 代码映射，如 `K85` 相关代码）。
-3. **模型一致性**：我们在 MIMIC 选出的 Top 12 指标（如 `creatinine_max`）必须在 eICU 中也能计算出来。如果 eICU 缺少某个指标（例如某个少见的化验），我们可能需要回过头微调模块 3 的特征选择。
-
----
-
-### 📝 接下来的第一步
-
-为了稳扎稳打，我建议我们按照以下顺序推进：
-
-1. **先完成模块 5 (Table 1)**：这是所有论文的基础，先把 MIMIC 的数据全貌展示清楚。
-2. **然后启动模块 7 (eICU 对接)**：我们需要编写 SQL 或 Python 代码从 eICU 中提取那 12 个核心特征。
-
-**你想让我现在先为你生成“模块 5：Table 1 自动化统计分析”的代码吗？这将帮助你完成论文的第一部分文字。**
+## 🏁 研究全流程（终极闭环版）
+1. **数据清洗** (MIMIC/eICU 单位统一)。
+2. **特征工程** (Log 转换、MICE 插补)。
+3. **算法竞赛** (5 种模型、贝叶斯优化、概率校准)。
+4. **内验证** (ROC 曲线、SHAP 归因)。
+5. **诊断效能** (约登指数、Cut-off 确定)。
+6. **统计描述** (Table 1 基线、单因素分析)。
+7. **外验证** (eICU 对齐、泛化性能评估)。
+8. **人群对比** (SMD 审计)。
+9. **临床价值** (DCA 净获益分析)。
+10. **稳健性审计** (VIF 共线性检测)。
+11. **可靠性评估** (校准曲线与诺莫图)。
