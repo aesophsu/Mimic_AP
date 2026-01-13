@@ -98,7 +98,7 @@ WITH lab_agg AS (
         le.hadm_id,
         MAX(CASE WHEN itemid = 51214 THEN valuenum END) AS fibrinogen_max,
         MIN(CASE WHEN itemid IN (50820, 50831) AND valuenum BETWEEN 6.5 AND 8.0 THEN valuenum END) AS ph_min,
-        MAX(CASE WHEN itemid IN (50820, 50831) AND valuenum BETWEEN 6.5 AND 8.0 THEN valuenum END) AS d_dimer_max,
+        MAX(CASE WHEN itemid IN (50820, 50831) AND valuenum BETWEEN 6.5 AND 8.0 THEN valuenum END) AS ph_max,
         MAX(CASE WHEN itemid = 50889 THEN valuenum END) AS crp_max,
         MIN(CASE WHEN itemid IN (50893, 50808) THEN valuenum END) AS calcium_min,
         MIN(CASE WHEN itemid = 50970 THEN valuenum END) AS phosphate_min
@@ -131,7 +131,7 @@ bg_agg AS (
 )
 SELECT 
     c.stay_id, -- 只保留核心 ID 用于后续 Join
-    l.fibrinogen_max, l.ph_min, l.d_dimer_max, l.crp_max, l.calcium_min, l.phosphate_min,
+    l.fibrinogen_max, l.ph_min, l.ph_max, l.crp_max, l.calcium_min, l.phosphate_min,
     v.heart_rate_max, v.temp_max, v.spo2_max,
     b.lactate_max
 FROM cohort_base c
