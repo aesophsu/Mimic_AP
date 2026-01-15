@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
+from tableone import TableOne
 
 # =========================================================
 # 1. 配置与路径
@@ -30,10 +31,11 @@ def run_module_02():
     
     for col in df.columns:
         if pd.api.types.is_numeric_dtype(df[col]):
+            series = df[col].dropna() # 排除空值进行计算
             missing = df[col].isnull().mean() * 100
-            med = df[col].median()
-            mean = df[col].mean()
-            v_max = df[col].max()
+            med = series.median() if not series.empty else 0
+            mean = series.mean() if not series.empty else 0
+            v_max = series.max() if not series.empty else 0
             print(f"{col:<25} | {missing:>8.2f}% | {med:>10.2f} | {mean:>10.2f} | {v_max:>10.2f}")
 
     # 逻辑：排除临床评分、入选后治疗及可能干扰预测的冗余结局指标
@@ -55,6 +57,17 @@ def run_module_02():
     # 仅剔除存在的列
     cols_to_drop = [c for c in must_drop if c in df.columns]
     df_clean = df.drop(columns=cols_to_drop)
+    # =========================================================
+    # 2.1 🔍 缺失率深度审计 (为模块 03 插补策略做准备)
+    # =========================================================
+    print("\n🔍 缺失率 Top 10 特征审计:")
+    missing_pct = df_clean.isnull().mean() * 100
+    print(missing_pct.sort_values(ascending=False).head(10).to_string(formatters={'': '{:,.2f}%'.format}))
+
+    # 如果某些核心变量缺失率 > 50%，这里会给你一个直观的警告
+    high_missing = missing_pct[missing_pct > 50].index.tolist()
+    if high_missing:
+        print(f"⚠️ 警告: 以下特征缺失率超过 50%: {high_missing}")
     
     # 🛡️ 强制审计：确保三个终点指标安全保留
     for label in all_labels:
@@ -77,37 +90,74 @@ def run_module_02():
         print(f"✅ 亚组标记完成: '无预存肾损伤' 样本量 = {no_renal_count} (占 {no_renal_count/len(df_clean):.1%})")
     else:
         print("⚠️ 警告: 缺少关键字段，跳过亚组划分。")
+    # =========================================================
+    # 3.1 🛡️ 跨数据库分层审计 (预防数据偏倚)
+    # =========================================================
+    print("\n🛡️ 亚组定义审计 (按数据库来源):")
+    
+    # 检查是否存在 database 标识列
+    db_col = 'database' if 'database' in df_clean.columns else ('source' if 'source' in df_clean.columns else None)
 
+    if db_col:
+        for db in df_clean[db_col].unique():
+            db_mask = df_clean[db_col] == db
+            n_total = db_mask.sum()
+            n_sub = df_clean.loc[db_mask, 'subgroup_no_renal'].sum()
+            pct = (n_sub / n_total) * 100
+            print(f"  [Audit] {db:10}: '无预存肾损' 样本数 = {int(n_sub)} / {n_total} ({pct:.1f}%)")
+    else:
+        # 如果暂无多库列，打印全样本审计
+        n_sub = df_clean['subgroup_no_renal'].sum()
+        print(f"  [Audit] 单中心模式: '无预存肾损' 总样本数 = {int(n_sub)} / {len(df_clean)}")
     # =========================================================
-    # 4. 📊 Table 1 自动化统计分析
+    # 4. 📊 自动化统计分析 (Table 1 & Table 2)
     # =========================================================
-    print("\n📊 正在生成 Table 1 基线特征对比表 (按 POF 分组)...")
     from tableone import TableOne
     
-    # 选择要在 Table 1 展示的特征
-    columns_for_table1 = [
+    # 定义展示变量
+    columns_for_table = [
         'admission_age', 'bmi', 'heart_failure', 'chronic_kidney_disease', 
         'malignant_tumor', 'bun_min', 'creatinine_max', 'lactate_max', 
         'pao2fio2ratio_min', 'wbc_max', 'alt_max', 'ast_max',
         'mortality_28d', 'composite_outcome'
     ]
     
-    # 自动过滤不存在的列并识别分类变量
-    columns_for_table1 = [c for c in columns_for_table1 if c in df_clean.columns]
+    # 自动识别存在的列与分类变量
+    columns_for_table = [c for c in columns_for_table if c in df_clean.columns]
     categorical = [c for c in ['heart_failure', 'chronic_kidney_disease', 'malignant_tumor', 
-                               'mortality_28d', 'composite_outcome'] if c in columns_for_table1]
+                               'mortality_28d', 'composite_outcome'] if c in columns_for_table]
 
-    # 执行统计：pval=True 自动进行显著性检验 (T-test/Kruskal-Wallis/Chi-square)
-    mytable = TableOne(df_clean, columns=columns_for_table1, categorical=categorical, 
-                       groupby='pof', pval=True, missing=True)
+    # --- 4.1 生成 Table 1 (POF vs Non-POF) ---
+    print("\n📊 正在生成 Table 1: 全人群基线特征 (按 POF 分组)...")
+    # 识别非正态分布变量（简单逻辑：所有连续变量通常在医学中都按非正态处理）
+    non_normal_cols = [c for c in columns_for_table if c not in categorical]
+
+    # 修改 TableOne 调用
+    t1 = TableOne(df_clean, columns=columns_for_table, categorical=categorical, 
+                  nonnormal=non_normal_cols, # 新增：指定非正态变量
+                  groupby='pof', pval=True, missing=True)
+    print(t1.tabulate(tablefmt="github"))
     
-    print(mytable.tabulate(tablefmt="github"))
+    # --- 4.2 生成 Table 2 (Subgroup: Renal vs No-Renal) ---
+    print("\n🔍 正在生成 Table 2: 肾功能亚组对比 (按 subgroup_no_renal 分组)...")
+    t2 = TableOne(df_clean, columns=columns_for_table, categorical=categorical, 
+                  nonnormal=non_normal_cols, # <--- 建议在这里也加上这行
+                  groupby='subgroup_no_renal', pval=True, missing=True)
+    print(t2.tabulate(tablefmt="github"))
+
+    # --- 4.3 统一保存统计报告 ---
+    REPORT_DIR = os.path.join(BASE_DIR, "reports")
+    os.makedirs(REPORT_DIR, exist_ok=True)
     
-    # 保存统计报告
-    report_path = os.path.join(BASE_DIR, "reports/table_1_baseline.csv")
-    os.makedirs(os.path.dirname(report_path), exist_ok=True)
-    mytable.to_csv(report_path)
-    print(f"✅ Table 1 已保存至: {report_path}")
+    t1_path = os.path.join(REPORT_DIR, "table_1_pof_comparison.csv")
+    t2_path = os.path.join(REPORT_DIR, "table_2_renal_subgroup.csv")
+    
+    t1.to_csv(t1_path)
+    t2.to_csv(t2_path)
+    
+    print(f"\n✅ 统计报告已保存:")
+    print(f"   - Table 1 (POF对比): {t1_path}")
+    print(f"   - Table 2 (亚组对比): {t2_path}")
 
     print("\n💡 状态：特征保持原始物理量级 (Raw Scale)，归一化移至模块 03 执行。")
     
@@ -124,6 +174,16 @@ def run_module_02():
     print(f"   - 主要结局 (POF) 发生率: {df_clean['pof'].mean():.2%}")
     print("-" * 60)
     print(f"✅ 模块 02 优化完成! 数据存至: {model_ready_path}")
-
+    # --- 在模块末尾 df_clean.to_csv 之后添加 ---
+    import gc
+    
+    # 显式删除不再需要的原始巨大 DataFrame
+    if 'df' in locals():
+        del df
+        
+    # 强制进行垃圾回收
+    gc.collect()
+    
+    print("🧹 内存已清理，准备进入下一模块。")
 if __name__ == "__main__":
     run_module_02()
