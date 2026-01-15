@@ -72,17 +72,25 @@ def run_module_01():
     print("\n🩺 正在执行跨库物理单位审计 (MIMIC ➡️ eICU)...")
     
     # A. BUN 转换 (依据 2.801 系数)
-    if 'bun_min' in df.columns:
-        med = df['bun_min'].median()
-        if med < 5: # 典型 mmol/L 量级
-            print(f"  - [BUN 校准]: 检测到 mmol/L 量级 ({med:.2f}), 正在应用 2.801 转换...")
+    # A. BUN 转换 (依据 2.801 系数，database-aware)
+    if 'bun_min' in df.columns and 'database' in df.columns:
+        bun_med_by_db = df.groupby('database')['bun_min'].median()
+
+    # 审计输出（一次性）
+        print(f"[Audit][BUN] median by database:\n{bun_med_by_db}")
+
+        if bun_med_by_db.get('eicu', 10) < 5:
+            print("  - [BUN 校准]: eICU 检测到 mmol/L 量级，应用 2.801 转换")
             for c in ['bun_min', 'bun_max']:
-                if c in df.columns: df[c] = df[c] * 2.801
+                if c in df.columns:
+                    df.loc[df['database'] == 'eicu', c] *= 2.801
 
     # B. AST/ALT 校准 (检测是否已被 Log 转换)
     for col in ['ast_max', 'alt_max']:
         if col in df.columns:
             med = df[col].median()
+            maxv = df[col].max()
+            print(f"[Audit][{col}] median={med:.2f}, max={maxv:.2f}")
             if med < 10 and df[col].max() < 50: # 如果中位数极低，执行反 Log 还原
                 print(f"  - [{col} 校准]: 检测到量级异常低 ({med:.2f}), 执行反 Log (expm1) 还原...")
                 df[col] = np.expm1(df[col])
