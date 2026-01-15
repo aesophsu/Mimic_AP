@@ -48,7 +48,7 @@ def run_module_01():
     outcome_labels = ['pof', 'mortality_28d', 'composite_outcome', 'early_death_24_48h', 
                       'resp_pof', 'cv_pof', 'renal_pof']
     clinical_soul_cols = ['lactate_max', 'pao2fio2ratio_min', 'lipase_max', 
-                          'lab_amylase_max', 'creatinine_max', 'ast_max', 'alt_max', 'bun_min', 'bmi']
+                          'creatinine_max', 'ast_max', 'alt_max', 'bun_min', 'bmi']
     white_list = outcome_labels + clinical_soul_cols + ['subject_id', 'hadm_id', 'stay_id']
 
     # =========================================================
