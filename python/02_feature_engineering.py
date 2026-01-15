@@ -79,10 +79,38 @@ def run_module_02():
         print("⚠️ 警告: 缺少关键字段，跳过亚组划分。")
 
     # =========================================================
-    # 4. 尺度一致性说明
+    # 4. 📊 Table 1 自动化统计分析
     # =========================================================
-    print("💡 状态：特征保持原始物理量级 (Raw Scale)，Log 转换将移至模块 03 执行。")
+    print("\n📊 正在生成 Table 1 基线特征对比表 (按 POF 分组)...")
+    from tableone import TableOne
+    
+    # 选择要在 Table 1 展示的特征
+    columns_for_table1 = [
+        'admission_age', 'bmi', 'heart_failure', 'chronic_kidney_disease', 
+        'malignant_tumor', 'bun_min', 'creatinine_max', 'lactate_max', 
+        'pao2fio2ratio_min', 'wbc_max', 'alt_max', 'ast_max',
+        'mortality_28d', 'composite_outcome'
+    ]
+    
+    # 自动过滤不存在的列并识别分类变量
+    columns_for_table1 = [c for c in columns_for_table1 if c in df_clean.columns]
+    categorical = [c for c in ['heart_failure', 'chronic_kidney_disease', 'malignant_tumor', 
+                               'mortality_28d', 'composite_outcome'] if c in columns_for_table1]
 
+    # 执行统计：pval=True 自动进行显著性检验 (T-test/Kruskal-Wallis/Chi-square)
+    mytable = TableOne(df_clean, columns=columns_for_table1, categorical=categorical, 
+                       groupby='pof', pval=True, missing=True)
+    
+    print(mytable.tabulate(tablefmt="github"))
+    
+    # 保存统计报告
+    report_path = os.path.join(BASE_DIR, "reports/table_1_baseline.csv")
+    os.makedirs(os.path.dirname(report_path), exist_ok=True)
+    mytable.to_csv(report_path)
+    print(f"✅ Table 1 已保存至: {report_path}")
+
+    print("\n💡 状态：特征保持原始物理量级 (Raw Scale)，归一化移至模块 03 执行。")
+    
     # =========================================================
     # 5. 最终保存
     # =========================================================
