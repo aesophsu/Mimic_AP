@@ -52,7 +52,8 @@ def run_module_03_optimized():
     # 排除列表
     drop_list = [
         target, 'mortality_28d', 'renal_pof', 'resp_pof', 'cv_pof', 
-        'subgroup_no_renal', 'hosp_mortality', 'overall_mortality'
+        'subgroup_no_renal', 'hosp_mortality', 'overall_mortality',
+        'composite_outcome'
     ]
     
     # 🛡️ 自动剔除非数值特征 (处理 ValueError: could not convert string to float)
@@ -136,7 +137,7 @@ def run_module_03_optimized():
         return cross_val_score(model, X_train_final, y_train, cv=cv, scoring='roc_auc').mean()
 
     study = optuna.create_study(direction='maximize')
-    study.optimize(objective, n_trials=20)
+    study.optimize(objective, n_trials=100)
     best_xgb = XGBClassifier(**study.best_params)
 
     # =========================================================
