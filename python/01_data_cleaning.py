@@ -40,7 +40,14 @@ def run_module_01():
             v_max = df[col].max()
             print(f"{col:<25} | {missing:>8.2f}% | {med:>10.2f} | {mean:>10.2f} | {v_max:>10.2f}")
             initial_stats.append(col)
-
+    if 'early_death_24_48h' in df.columns:
+        early_death_mask = (df['early_death_24_48h'] == 1)
+        correction_count = ((df['early_death_24_48h'] == 1) & (df['pof'] == 0)).sum()
+        
+        df.loc[early_death_mask, 'pof'] = 1
+        df.loc[early_death_mask, 'composite_outcome'] = 1
+        
+        print(f"\n🩺 标签审计：修正了 {correction_count} 例早亡导致的 POF 假阴性。")
     # =========================================================
     # 3. 核心保护白名单 (强制保留关键变量)
     # =========================================================
@@ -76,7 +83,7 @@ def run_module_01():
     for col in ['ast_max', 'alt_max']:
         if col in df.columns:
             med = df[col].median()
-            if med < 10: # 如果中位数极低，执行反 Log 还原
+            if med < 10 and df[col].max() < 50: # 如果中位数极低，执行反 Log 还原
                 print(f"  - [{col} 校准]: 检测到量级异常低 ({med:.2f}), 执行反 Log (expm1) 还原...")
                 df[col] = np.expm1(df[col])
 
