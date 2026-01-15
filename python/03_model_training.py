@@ -98,7 +98,7 @@ def run_module_03_optimized():
     # =========================================================
     skewed_cols = ['creatinine_max', 'creatinine_min', 'bun_max', 'bun_min',
                    'wbc_max', 'wbc_min', 'glucose_max', 'glucose_min',
-                   'lab_amylase_max', 'lipase_max', 'lactate_max',
+                   'lipase_max', 'lactate_max',
                    'alt_max', 'ast_max', 'bilirubin_total_max', 
                    'alp_max', 'inr_max', 'rdw_max']
     existing_skewed = [c for c in skewed_cols if c in X_train.columns]
@@ -234,87 +234,51 @@ def run_module_03_optimized():
         auc_sub = roc_auc_score(y_test_sub, y_prob_sub)
         
         calibrated_results[name] = clf
-        print(f"{name:<20} | {auc_main:.4f}     | {auc_sub:.4f}         | {brier:.4f}")
+        print(f"{name:<20} | {auc_main:.4f}      | {auc_sub:.4f}          | {brier:.4f}")
 
-    # --- [图3 & 4: ROC 与 Calibration 曲线] ---
-    fig, ax = plt.subplots(1, 2, figsize=(16, 6))
-
-    for name, clf in calibrated_results.items():
-        # 获取验证集概率
-        y_prob = clf.predict_proba(X_test_final)[:, 1]
-        
-        # ROC 曲线
-        fpr, tpr, _ = roc_curve(y_test, y_prob)
-        ax[0].plot(fpr, tpr, label=f'{name} (AUC={roc_auc_score(y_test, y_prob):.3f})')
-        
-        # Calibration 曲线
-        prob_true, prob_pred = calibration_curve(y_test, y_prob, n_bins=10)
-        ax[1].plot(prob_pred, prob_true, marker='o', label=name)
-
-    # ROC 图修饰 (针对 Validation Group)
-    ax[0].plot([0, 1], [0, 1], 'k--')
-    ax[0].set_title('ROC Curves (Validation Group)')
-    ax[0].set_xlabel('False Positive Rate')
-    ax[0].set_ylabel('True Positive Rate')
-    ax[0].legend()
-
-    # Calibration 图修饰
-    ax[1].plot([0, 1], [0, 1], 'k--', label='Perfectly Calibrated')
-    ax[1].set_title('Calibration Curves (Validation Group)')
-    ax[1].set_xlabel('Predicted Probability')
-    ax[1].set_ylabel('Actual Probability')
-    ax[1].legend()
-
-    plt.tight_layout()
-    # 修改路径为 FIG_DIR，并重命名为更专业的名称
-    plt.savefig(os.path.join(FIG_DIR, "model_performance_validation.png"), dpi=300)
-    plt.show()
     # =========================================================
     # 7.2 性能对比绘图 (Training vs Validation)
     # =========================================================
-    # 定义绘图函数以减少重复代码
+    # 💡 统一绘图函数：确保所有图片风格高度一致，符合 SCI 发表要求
     def plot_performance(data_pairs, title_suffix, save_name):
         fig, ax = plt.subplots(1, 2, figsize=(16, 6))
+        X_data, y_true = data_pairs
         
         for name, clf in calibrated_results.items():
-            X_data, y_true = data_pairs
             y_prob = clf.predict_proba(X_data)[:, 1]
             
-            # ROC 曲线
+            # ROC 曲线：衡量区分度
             fpr, tpr, _ = roc_curve(y_true, y_prob)
             auc_val = roc_auc_score(y_true, y_prob)
             ax[0].plot(fpr, tpr, label=f'{name} (AUC={auc_val:.3f})')
             
-            # Calibration 曲线
+            # Calibration 曲线：衡量准确度（预测概率 vs 实际发生率）
             prob_true, prob_pred = calibration_curve(y_true, y_prob, n_bins=10)
-            ax[1].plot(prob_pred, prob_true, marker='o', label=name)
+            ax[1].plot(prob_pred, prob_true, marker='o', label=name, markersize=5)
 
-        # ROC 图修饰
-        ax[0].plot([0, 1], [0, 1], 'k--', alpha=0.7)
-        ax[0].set_title(f'ROC Curves ({title_suffix})')
+        # ROC 图细节微调
+        ax[0].plot([0, 1], [0, 1], 'k--', alpha=0.5)
+        ax[0].set_title(f'ROC Curves ({title_suffix})', fontsize=14, fontweight='bold')
         ax[0].set_xlabel('False Positive Rate')
         ax[0].set_ylabel('True Positive Rate')
         ax[0].legend(loc='lower right')
 
-        # Calibration 图修饰
-        ax[1].plot([0, 1], [0, 1], 'k--', label='Perfectly Calibrated', alpha=0.7)
-        ax[1].set_title(f'Calibration Curves ({title_suffix})')
+        # Calibration 图细节微调
+        ax[1].plot([0, 1], [0, 1], 'k--', label='Perfectly Calibrated', alpha=0.5)
+        ax[1].set_title(f'Calibration Curves ({title_suffix})', fontsize=14, fontweight='bold')
         ax[1].set_xlabel('Predicted Probability')
         ax[1].set_ylabel('Actual Probability')
         ax[1].legend(loc='upper left')
 
         plt.tight_layout()
-        plt.savefig(os.path.join(FIG_DIR, save_name), dpi=300)
+        # 使用 bbox_inches='tight' 确保图例不被截断
+        plt.savefig(os.path.join(FIG_DIR, save_name), dpi=300, bbox_inches='tight')
         plt.show()
 
-    # --- 执行生成：训练集图片 ---
-    print("📊 正在生成训练集性能评估图...")
-    plot_performance((X_train_final, y_train), "Training Group", "model_perf_training.png")
-
-    # --- 执行生成：验证集图片 ---
-    print("📊 正在生成验证集性能评估图...")
-    plot_performance((X_test_final, y_test), "Validation Group", "model_perf_validation.png")
-    
+    # --- 一键生成：训练集与验证集对比图 ---
+    print("\n📊 正在生成论文级性能对比图...")
+    plot_performance((X_train_final, y_train), "Training Group", "Figure_ROC_Calibration_Training.png")
+    plot_performance((X_test_final, y_test), "Validation Group", "Figure_ROC_Calibration_Validation.png")
     # =========================================================
     # 8. 全资产保存
     # =========================================================
