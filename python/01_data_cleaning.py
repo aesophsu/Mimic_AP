@@ -8,122 +8,121 @@ import pandas as pd
 BASE_DIR = ".."
 INPUT_PATH = os.path.join(BASE_DIR, "data/ap_final_analysis_cohort.csv")
 SAVE_DIR = os.path.join(BASE_DIR, "data/cleaned")
-
-# 缺失率门槛：超过 30% 则剔除（除非在白名单中）
-MISSING_THRESHOLD = 0.3 
+MISSING_THRESHOLD = 0.3  # 30% 缺失率剔除门槛
 
 if not os.path.exists(SAVE_DIR):
     os.makedirs(SAVE_DIR)
 
 def run_module_01():
-    print("="*60)
-    print("🚀 运行模块 01: 状态标记、单位校准与特征清洗")
-    print("="*60)
+    print("="*70)
+    print("🚀 启动模块 01: 跨库尺度对齐与特征清洗")
+    print("="*70)
     
     if not os.path.exists(INPUT_PATH):
         print(f"❌ 错误: 找不到输入文件 {INPUT_PATH}")
         return
     
-    df_raw = pd.read_csv(INPUT_PATH)
-    df = df_raw.copy()
-    print(f"📊 原始数据读取成功: {df.shape[0]} 行, {df.shape[1]} 列")
-
-    # =========================================================
-    # 2. 精准定义结局指标
-    # =========================================================
-    df['intime'] = pd.to_datetime(df['intime'])
-    df['deathtime'] = pd.to_datetime(df['deathtime'])
-    df['dod'] = pd.to_datetime(df['dod'])
-
-    # 计算 28天死亡率
-    death_timestamp = df[['deathtime', 'dod']].min(axis=1)
-    days_to_death = (death_timestamp - df['intime']).dt.total_seconds() / (24 * 3600)
-    df['mortality_28d'] = ((days_to_death >= 0) & (days_to_death <= 28)).astype(int)
+    df = pd.read_csv(INPUT_PATH)
     
-    # 标记其他结局用于分析
-    df['hosp_mortality'] = df['deathtime'].notnull().astype(int)
-    df['overall_mortality'] = df['dod'].notnull().astype(int)
+    # =========================================================
+    # 2. 特征探测与全清单统计 (Table 1 预审)
+    # =========================================================
+    print(f"\n📋 原始数据探测: {df.shape[0]} 行, {df.shape[1]} 列")
+    print(f"{'Feature Name':<25} | {'Missing%':<10} | {'Median':<10} | {'Mean':<10} | {'Max':<10}")
+    print("-" * 75)
+    
+    initial_stats = []
+    for col in df.columns:
+        if pd.api.types.is_numeric_dtype(df[col]):
+            missing = df[col].isnull().mean() * 100
+            med = df[col].median()
+            mean = df[col].mean()
+            v_max = df[col].max()
+            print(f"{col:<25} | {missing:>8.2f}% | {med:>10.2f} | {mean:>10.2f} | {v_max:>10.2f}")
+            initial_stats.append(col)
 
     # =========================================================
-    # 3. 核心保护白名单 (防止关键特征被过滤)
+    # 3. 核心保护白名单 (强制保留关键变量)
     # =========================================================
-    outcome_labels = ['mortality_28d', 'hosp_mortality', 'overall_mortality', 
-                      'pof', 'renal_pof', 'resp_pof', 'cv_pof']
+    # 结局指标 + 临床灵魂字段 + ID
+    outcome_labels = ['pof', 'mortality_28d', 'composite_outcome', 'early_death_24_48h', 
+                      'resp_pof', 'cv_pof', 'renal_pof']
     clinical_soul_cols = ['lactate_max', 'pao2fio2ratio_min', 'lipase_max', 
-                          'lab_amylase_max', 'creatinine_max', 'ast_max', 'alt_max', 'bun_min']
-    id_time_cols = ['subject_id', 'hadm_id', 'stay_id', 'intime', 'admittime']
-    white_list = outcome_labels + clinical_soul_cols + id_time_cols
+                          'lab_amylase_max', 'creatinine_max', 'ast_max', 'alt_max', 'bun_min', 'bmi']
+    white_list = outcome_labels + clinical_soul_cols + ['subject_id', 'hadm_id', 'stay_id']
 
     # =========================================================
-    # 4. 缺失率过滤
+    # 4. 缺失率过滤 (30% 门槛)
     # =========================================================
     missing_pct = df.isnull().mean()
-    cols_to_drop = [c for c in missing_pct[missing_pct > MISSING_THRESHOLD].index 
-                    if c not in white_list]
-    df_filtered = df.drop(columns=cols_to_drop)
+    cols_to_drop = [c for c in missing_pct[missing_pct > MISSING_THRESHOLD].index if c not in white_list]
+    df = df.drop(columns=cols_to_drop)
+    print(f"\n🗑️ 基于缺失率 (>30%) 剔除 {len(cols_to_drop)} 个非核心特征。")
 
     # =========================================================
-    # 5. ⚠️ 核心修正：物理单位校准 (与 eICU 对齐)
+    # 5. 🩺 物理尺度对齐 (Automated Unit Auditing)
     # =========================================================
-    print("\n🩺 正在执行物理单位对齐审计...")
+    print("\n🩺 正在执行跨库物理单位审计 (MIMIC ➡️ eICU)...")
     
-    # 校准函数：基于中位数判断当前量级
-    def harmonize_mimic_units(data):
-        # 1. AST/ALT 校准: 如果中位数 < 10，说明极有可能是 Log 尺度或严重偏离原始 U/L 单位
-        for col in ['ast_max', 'alt_max']:
-            if col in data.columns:
-                med = data[col].median()
-                if not pd.isna(med) and med < 10:
-                    print(f"  - 发现 {col} 量级偏低 ({med:.2f}), 执行反 Log 还原或单位校准...")
-                    # 如果数据已经是 Log1p 后的，尝试还原: e^x - 1
-                    data[col] = np.expm1(data[col]) 
-        
-        # 2. BUN 校准: 确保单位为 mg/dL (eICU 标准)
-        if 'bun_min' in data.columns:
-            med = data['bun_min'].median()
-            if not pd.isna(med) and med < 5:
-                print(f"  - 发现 bun_min 量级偏低 ({med:.2f}), 尝试 mmol/L -> mg/dL 转换...")
-                data['bun_min'] = data['bun_min'] * 2.8
-        
-        # 3. Fibrinogen 校准
-        if 'fibrinogen_max' in data.columns:
-            med = data['fibrinogen_max'].median()
-            if not pd.isna(med) and med < 50:
-                print(f"  - 发现 fibrinogen_max 量级偏低 ({med:.2f}), 转换为 mg/dL...")
-                data['fibrinogen_max'] = data['fibrinogen_max'] * 100
-        return data
+    # A. BUN 转换 (依据 2.801 系数)
+    if 'bun_min' in df.columns:
+        med = df['bun_min'].median()
+        if med < 5: # 典型 mmol/L 量级
+            print(f"  - [BUN 校准]: 检测到 mmol/L 量级 ({med:.2f}), 正在应用 2.801 转换...")
+            for c in ['bun_min', 'bun_max']:
+                if c in df.columns: df[c] = df[c] * 2.801
 
-    df_filtered = harmonize_mimic_units(df_filtered)
+    # B. AST/ALT 校准 (检测是否已被 Log 转换)
+    for col in ['ast_max', 'alt_max']:
+        if col in df.columns:
+            med = df[col].median()
+            if med < 10: # 如果中位数极低，执行反 Log 还原
+                print(f"  - [{col} 校准]: 检测到量级异常低 ({med:.2f}), 执行反 Log (expm1) 还原...")
+                df[col] = np.expm1(df[col])
+
+    # C. Fibrinogen 校准 (g/L -> mg/dL)
+    if 'fibrinogen_max' in df.columns:
+        med = df['fibrinogen_max'].median()
+        if med < 10: 
+            print(f"  - [Fibrinogen 校准]: 检测到 g/L 量级 ({med:.2f}), 转换为 mg/dL...")
+            df['fibrinogen_max'] = df['fibrinogen_max'] * 100
 
     # =========================================================
     # 6. 盖帽处理 (Clipping 1%-99%)
     # =========================================================
-    df_table1 = df_filtered.copy()
-    numeric_cols = df_table1.select_dtypes(include=[np.number]).columns
-    skip_clip = white_list + ['gender_num', 'alcoholic_ap', 'biliary_ap', 
-                              'hyperlipidemic_ap', 'drug_induced_ap', 'vaso_flag']
+    print("\n✂️ 执行 1%-99% 盖帽处理以消除离群值...")
+    skip_clip = white_list + ['gender_num', 'vaso_flag', 'mechanical_vent_flag']
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
     
     for col in numeric_cols:
-        if col in df_table1.columns and col not in skip_clip:
-            lower = df_table1[col].quantile(0.01)
-            upper = df_table1[col].quantile(0.99)
-            df_table1[col] = df_table1[col].clip(lower, upper)
+        if col not in skip_clip:
+            lower = df[col].quantile(0.01)
+            upper = df[col].quantile(0.99)
+            df[col] = df[col].clip(lower, upper)
 
     # =========================================================
-    # 7. 特征自检报告与保存
+    # 7. 最终缺失率与审计统计报告
     # =========================================================
-    print("-" * 60)
-    print(f"🔹 最终保留列数: {len(df_table1.columns)}")
-    print(f"🔹 关键指标审计 (Median):")
-    for c in ['ast_max', 'bun_min', 'creatinine_max']:
-        if c in df_table1.columns:
-            print(f"  - {c:<15}: {df_table1[c].median():.2f}")
-
-    table1_path = os.path.join(SAVE_DIR, "mimic_for_table1.csv")
-    df_table1.to_csv(table1_path, index=False)
+    print("\n" + "-"*70)
+    print(f"📊 模块 01 清洗完成总结:")
+    print(f"  - 最终样本量: {df.shape[0]}")
+    print(f"  - 最终特征数: {df.shape[1]}")
+    print(f"  - 关键指标对齐审计 (Median):")
+    for c in ['ast_max', 'bun_min', 'creatinine_max', 'bmi']:
+        if c in df.columns:
+            print(f"    > {c:<18}: {df[c].median():.2f}")
     
-    print("-" * 60)
-    print(f"✅ 模块 01 完成! 干净原始尺度数据已存至: {table1_path}")
+    # 缺失率警告
+    print("\n🔍 核心白名单字段缺失情况:")
+    for c in clinical_soul_cols:
+        if c in df.columns:
+            m_rate = df[c].isnull().mean() * 100
+            print(f"    > {c:<18}: {m_rate:>6.2f}% {'❗' if m_rate > 30 else ''}")
+
+    # 保存结果
+    save_path = os.path.join(SAVE_DIR, "mimic_for_table1.csv")
+    df.to_csv(save_path, index=False)
+    print(f"\n✅ 干净数据已存至: {save_path}")
 
 if __name__ == "__main__":
     run_module_01()
