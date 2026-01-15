@@ -62,8 +62,7 @@ def run_module_02():
     # =========================================================
     print("\n🔍 缺失率 Top 10 特征审计:")
     missing_pct = df_clean.isnull().mean() * 100
-    print(missing_pct.sort_values(ascending=False).head(10).to_string(formatters={'': '{:,.2f}%'.format}))
-
+    print(missing_pct.sort_values(ascending=False).head(10).map("{:.2f}%".format))
     # 如果某些核心变量缺失率 > 50%，这里会给你一个直观的警告
     high_missing = missing_pct[missing_pct > 50].index.tolist()
     if high_missing:
