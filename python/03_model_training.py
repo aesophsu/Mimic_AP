@@ -16,7 +16,9 @@ from sklearn.svm import SVC
 from xgboost import XGBClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import roc_auc_score, brier_score_loss
-
+import matplotlib.pyplot as plt
+from sklearn.linear_model import Lasso
+from sklearn.metrics import roc_curve, calibration_curve
 # 屏蔽警告
 import warnings
 warnings.filterwarnings('ignore')
@@ -28,8 +30,10 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 BASE_DIR = ".."
 INPUT_PATH = os.path.join(BASE_DIR, "data/cleaned/mimic_for_model.csv")
 SAVE_DIR = os.path.join(BASE_DIR, "models")
-if not os.path.exists(SAVE_DIR):
-    os.makedirs(SAVE_DIR)
+FIG_DIR = os.path.join(BASE_DIR, "figures") # 新增：图片保存目录
+for d in [SAVE_DIR, FIG_DIR]:
+    if not os.path.exists(d):
+        os.makedirs(d)
 
 def run_module_03_optimized():
     print("="*60)
@@ -45,6 +49,19 @@ def run_module_03_optimized():
     # =========================================================
     # 2. 特征清洗与预处理 (关键：修复文本列报错)
     # =========================================================
+    print(f"\n📋 原始数据探测: {df.shape[0]} 行, {df.shape[1]} 列")
+    print(f"{'Feature Name':<25} | {'Missing%':<10} | {'Median':<10} | {'Mean':<10} | {'Max':<10}")
+    print("-" * 75)
+    
+    for col in df.columns:
+        if pd.api.types.is_numeric_dtype(df[col]):
+            series = df[col].dropna() # 排除空值进行计算
+            missing = df[col].isnull().mean() * 100
+            med = series.median() if not series.empty else 0
+            mean = series.mean() if not series.empty else 0
+            v_max = series.max() if not series.empty else 0
+            print(f"{col:<25} | {missing:>8.2f}% | {med:>10.2f} | {mean:>10.2f} | {v_max:>10.2f}")
+            
     if 'gender' in df.columns:
         df['gender'] = df['gender'].map({'M': 1, 'F': 0})
     
@@ -72,7 +89,10 @@ def run_module_03_optimized():
     X_train, X_test, y_train, y_test, sub_train, sub_test = train_test_split(
         X, y, subgroup_flag, test_size=0.2, random_state=42, stratify=y
     )
-
+    # --- [修改位置 A]: 划分后的分布审计 ---
+    print(f"\n🛡️ 亚组分布平衡审计:")
+    print(f"  Train Set: n={len(y_train)}, No-Renal Subgroup={sub_train.sum()} ({sub_train.sum()/len(sub_train):.1%})")
+    print(f"  Test Set:  n={len(y_test)}, No-Renal Subgroup={sub_test.sum()} ({sub_test.sum()/len(sub_test):.1%})")
     # =========================================================
     # 3. 🧪 核心修正：动态 Log1p 转换 (救赎线性模型)
     # =========================================================
@@ -81,10 +101,15 @@ def run_module_03_optimized():
                    'lab_amylase_max', 'lipase_max', 'lactate_max',
                    'alt_max', 'ast_max', 'bilirubin_total_max', 
                    'alp_max', 'inr_max', 'rdw_max']
-    
     existing_skewed = [c for c in skewed_cols if c in X_train.columns]
-    print(f"🔄 正在执行动态 Log1p 转换 ({len(existing_skewed)} 个变量)...")
+    print(f"\n🔄 正在执行动态 Log1p 转换与量级审计...")
     for col in existing_skewed:
+        # 在转换前记录中位数，用于跨库一致性比对
+        train_med = X_train[col].median()
+        test_med = X_test[col].median()
+        print(f"  [Audit] {col:<20}: train_median={train_med:>8.2f}, test_median={test_med:>8.2f}")
+        
+        # 执行带裁剪的对数转换
         X_train[col] = np.log1p(X_train[col].clip(lower=0))
         X_test[col] = np.log1p(X_test[col].clip(lower=0))
 
@@ -96,6 +121,11 @@ def run_module_03_optimized():
     scaler = StandardScaler()
 
     X_train_imp = mice_imputer.fit_transform(X_train)
+    # --- [修改位置 C]: 插补后的质量审计 ---
+    # 统计缺失率超过 40% 的特征
+    high_missing = X_train.columns[X_train.isnull().mean() > 0.4].tolist()
+    if high_missing:
+        print(f"⚠️ 插补风险提示: 以下变量缺失率 > 40%，MICE 插补可能引入噪声:\n  {high_missing}")
     X_train_std = scaler.fit_transform(X_train_imp)
 
     X_test_imp = mice_imputer.transform(X_test)
@@ -113,6 +143,30 @@ def run_module_03_optimized():
     lasso = LassoCV(cv=5, random_state=42, max_iter=20000).fit(X_train_std, y_train)
     
     coef_abs = np.abs(lasso.coef_)
+   
+    # --- [图1: Lasso 路径图] ---
+    alphas, coefs, _ = Lasso(max_iter=20000).path(X_train_std, y_train)
+    plt.figure(figsize=(10, 6))
+    for i in range(coefs.shape[0]):
+        plt.plot(np.log10(alphas), coefs[i, :])
+    plt.xlabel('log(Alpha)')
+    plt.ylabel('Coefficients')
+    plt.title('Lasso Regression Trajectories')
+    plt.savefig(os.path.join(FIG_DIR, "lasso_trajectories.png"), dpi=300) # 修改路径并增加分辨率
+    plt.close()
+
+    # --- [图2: Lasso CV 误差图] ---
+    plt.figure(figsize=(10, 6))
+    plt.plot(lasso.alphas_, lasso.mse_path_.mean(axis=1))
+    plt.axvline(lasso.alpha_, linestyle='--', color='r', label='Best Alpha')
+    plt.xlabel('Alpha')
+    plt.ylabel('Mean Squared Error')
+    plt.title('Lasso Cross-Validation MSE')
+    plt.legend()
+    plt.savefig(os.path.join(FIG_DIR, "lasso_cv_mse.png"), dpi=300) # 修改路径
+    plt.close()
+
+
     indices = np.argsort(coef_abs)[-12:] # 锁定绝对值最大的 12 个特征
     selected_features = X.columns[indices].tolist()
     
@@ -137,8 +191,14 @@ def run_module_03_optimized():
         return cross_val_score(model, X_train_final, y_train, cv=cv, scoring='roc_auc').mean()
 
     study = optuna.create_study(direction='maximize')
-    study.optimize(objective, n_trials=100)
-    best_xgb = XGBClassifier(**study.best_params)
+    study.optimize(objective, n_trials=100)    
+    # 持久化 Study 对象
+    joblib.dump(study, os.path.join(SAVE_DIR, "optuna_xgboost_study.pkl"))
+    print(f"✅ Optuna 寻优完成。最佳 AUC: {study.best_value:.4f}")
+    
+    # 使用最佳参数重新训练
+    best_params = study.best_params
+    best_xgb = XGBClassifier(**study.best_params, random_state=42, use_label_encoder=False, eval_metric='logloss')
 
     # =========================================================
     # 7. 🏆 5 种模型算法竞赛 (含概率校准)
@@ -176,6 +236,85 @@ def run_module_03_optimized():
         calibrated_results[name] = clf
         print(f"{name:<20} | {auc_main:.4f}     | {auc_sub:.4f}         | {brier:.4f}")
 
+    # --- [图3 & 4: ROC 与 Calibration 曲线] ---
+    fig, ax = plt.subplots(1, 2, figsize=(16, 6))
+
+    for name, clf in calibrated_results.items():
+        # 获取验证集概率
+        y_prob = clf.predict_proba(X_test_final)[:, 1]
+        
+        # ROC 曲线
+        fpr, tpr, _ = roc_curve(y_test, y_prob)
+        ax[0].plot(fpr, tpr, label=f'{name} (AUC={roc_auc_score(y_test, y_prob):.3f})')
+        
+        # Calibration 曲线
+        prob_true, prob_pred = calibration_curve(y_test, y_prob, n_bins=10)
+        ax[1].plot(prob_pred, prob_true, marker='o', label=name)
+
+    # ROC 图修饰 (针对 Validation Group)
+    ax[0].plot([0, 1], [0, 1], 'k--')
+    ax[0].set_title('ROC Curves (Validation Group)')
+    ax[0].set_xlabel('False Positive Rate')
+    ax[0].set_ylabel('True Positive Rate')
+    ax[0].legend()
+
+    # Calibration 图修饰
+    ax[1].plot([0, 1], [0, 1], 'k--', label='Perfectly Calibrated')
+    ax[1].set_title('Calibration Curves (Validation Group)')
+    ax[1].set_xlabel('Predicted Probability')
+    ax[1].set_ylabel('Actual Probability')
+    ax[1].legend()
+
+    plt.tight_layout()
+    # 修改路径为 FIG_DIR，并重命名为更专业的名称
+    plt.savefig(os.path.join(FIG_DIR, "model_performance_validation.png"), dpi=300)
+    plt.show()
+    # =========================================================
+    # 7.2 性能对比绘图 (Training vs Validation)
+    # =========================================================
+    # 定义绘图函数以减少重复代码
+    def plot_performance(data_pairs, title_suffix, save_name):
+        fig, ax = plt.subplots(1, 2, figsize=(16, 6))
+        
+        for name, clf in calibrated_results.items():
+            X_data, y_true = data_pairs
+            y_prob = clf.predict_proba(X_data)[:, 1]
+            
+            # ROC 曲线
+            fpr, tpr, _ = roc_curve(y_true, y_prob)
+            auc_val = roc_auc_score(y_true, y_prob)
+            ax[0].plot(fpr, tpr, label=f'{name} (AUC={auc_val:.3f})')
+            
+            # Calibration 曲线
+            prob_true, prob_pred = calibration_curve(y_true, y_prob, n_bins=10)
+            ax[1].plot(prob_pred, prob_true, marker='o', label=name)
+
+        # ROC 图修饰
+        ax[0].plot([0, 1], [0, 1], 'k--', alpha=0.7)
+        ax[0].set_title(f'ROC Curves ({title_suffix})')
+        ax[0].set_xlabel('False Positive Rate')
+        ax[0].set_ylabel('True Positive Rate')
+        ax[0].legend(loc='lower right')
+
+        # Calibration 图修饰
+        ax[1].plot([0, 1], [0, 1], 'k--', label='Perfectly Calibrated', alpha=0.7)
+        ax[1].set_title(f'Calibration Curves ({title_suffix})')
+        ax[1].set_xlabel('Predicted Probability')
+        ax[1].set_ylabel('Actual Probability')
+        ax[1].legend(loc='upper left')
+
+        plt.tight_layout()
+        plt.savefig(os.path.join(FIG_DIR, save_name), dpi=300)
+        plt.show()
+
+    # --- 执行生成：训练集图片 ---
+    print("📊 正在生成训练集性能评估图...")
+    plot_performance((X_train_final, y_train), "Training Group", "model_perf_training.png")
+
+    # --- 执行生成：验证集图片 ---
+    print("📊 正在生成验证集性能评估图...")
+    plot_performance((X_test_final, y_test), "Validation Group", "model_perf_validation.png")
+    
     # =========================================================
     # 8. 全资产保存
     # =========================================================
