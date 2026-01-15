@@ -18,8 +18,8 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import roc_auc_score, brier_score_loss
 import matplotlib.pyplot as plt
 from sklearn.linear_model import Lasso
-from sklearn.metrics import roc_curve, calibration_curve
-# 屏蔽警告
+from sklearn.metrics import roc_curve, roc_auc_score, brier_score_loss
+from sklearn.calibration import calibration_curve # 将它从 calibration 模块导入# 屏蔽警告
 import warnings
 warnings.filterwarnings('ignore')
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -137,37 +137,65 @@ def run_module_03_optimized():
     joblib.dump(existing_skewed, os.path.join(SAVE_DIR, "skewed_cols.pkl"))
 
     # =========================================================
-    # 5. LASSO 特征降维 (Top 12)
+    # 5. LASSO 特征降维 (Top 12) - 学术增强版
     # =========================================================
-    print("🧪 正在精选极致核心特征 (Top 12)...")
+    print("🧪 正在精选极致核心特征 (Top 12)并生成学术图表...")
+    
+    # 执行 LassoCV
     lasso = LassoCV(cv=5, random_state=42, max_iter=20000).fit(X_train_std, y_train)
     
+    # --- [计算绘图所需指标] ---
+    alphas = lasso.alphas_
+    log_alphas = np.log10(alphas)
+    mse_mean = lasso.mse_path_.mean(axis=1)
+    mse_std = lasso.mse_path_.std(axis=1)
+    mse_se = mse_std / np.sqrt(lasso.mse_path_.shape[1]) # 标准误
+    
+    # 找到 Min MSE 和 1-SE 点
+    idx_min = np.argmin(mse_mean)
+    target_mse = mse_mean[idx_min] + mse_se[idx_min]
+    # 1-SE 点：在 idx_min 之后（更简单的模型中）寻找最后一个满足 MSE <= target_mse 的索引
+    idx_1se = np.where(mse_mean <= target_mse)[0][0] 
+
+    # 获取特征路径用于顶部计数
+    from sklearn.linear_model import lasso_path
+    _, coefs_path, _ = lasso_path(X_train_std, y_train, alphas=alphas)
+    active_counts = np.sum(coefs_path != 0, axis=0)
+
+    # --- [绘制学术风格 Lasso CV 图] ---
+    plt.figure(figsize=(10, 7), dpi=300)
+    ax1 = plt.gca()
+    
+    # 1. 绘制误差棒 (Error Bars)
+    ax1.errorbar(log_alphas, mse_mean, yerr=mse_se, fmt='o', color='red', 
+                 ecolor='gray', elinewidth=1, capsize=2, mfc='red', ms=5, label='Cross-Validation Error')
+    
+    # 2. 绘制 Min MSE 线 (蓝) 和 1-SE 线 (黑)
+    ax1.axvline(log_alphas[idx_min], color='blue', linestyle='--', label=f'Min Error (n={active_counts[idx_min]})')
+    ax1.axvline(log_alphas[idx_1se], color='black', linestyle='--', label=f'1-SE Rule (n={active_counts[idx_1se]})')
+
+    ax1.set_xlabel(r'$\log_{10}(\alpha)$', fontsize=12)
+    ax1.set_ylabel('Mean Squared Error (MSE)', fontsize=12)
+    ax1.set_title('Lasso Variable Selection with 1-SE Rule', fontsize=14, fontweight='bold')
+    ax1.legend(loc='upper left', fontsize=10)
+    ax1.grid(alpha=0.3)
+
+    # 3. 添加顶部特征计数轴
+    ax2 = ax1.twiny()
+    ax2.set_xlim(ax1.get_xlim())
+    tick_indices = np.linspace(0, len(log_alphas)-1, 10, dtype=int)
+    ax2.set_xticks(log_alphas[tick_indices])
+    ax2.set_xticklabels(active_counts[tick_indices])
+    ax2.set_xlabel('Number of Non-zero Coefficients', fontsize=12, labelpad=10)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(FIG_DIR, "Academic_Lasso_CV.png"), dpi=300)
+    plt.show()
+    plt.close()
+
+    # --- [特征提取保持不变] ---
     coef_abs = np.abs(lasso.coef_)
-   
-    # --- [图1: Lasso 路径图] ---
-    alphas, coefs, _ = Lasso(max_iter=20000).path(X_train_std, y_train)
-    plt.figure(figsize=(10, 6))
-    for i in range(coefs.shape[0]):
-        plt.plot(np.log10(alphas), coefs[i, :])
-    plt.xlabel('log(Alpha)')
-    plt.ylabel('Coefficients')
-    plt.title('Lasso Regression Trajectories')
-    plt.savefig(os.path.join(FIG_DIR, "lasso_trajectories.png"), dpi=300) # 修改路径并增加分辨率
-    plt.close()
-
-    # --- [图2: Lasso CV 误差图] ---
-    plt.figure(figsize=(10, 6))
-    plt.plot(lasso.alphas_, lasso.mse_path_.mean(axis=1))
-    plt.axvline(lasso.alpha_, linestyle='--', color='r', label='Best Alpha')
-    plt.xlabel('Alpha')
-    plt.ylabel('Mean Squared Error')
-    plt.title('Lasso Cross-Validation MSE')
-    plt.legend()
-    plt.savefig(os.path.join(FIG_DIR, "lasso_cv_mse.png"), dpi=300) # 修改路径
-    plt.close()
-
-
-    indices = np.argsort(coef_abs)[-12:] # 锁定绝对值最大的 12 个特征
+    indices = np.argsort(coef_abs)[-12:] 
     selected_features = X.columns[indices].tolist()
     
     X_train_final = X_train_std[:, indices]
@@ -237,48 +265,55 @@ def run_module_03_optimized():
         print(f"{name:<20} | {auc_main:.4f}      | {auc_sub:.4f}          | {brier:.4f}")
 
     # =========================================================
-    # 7.2 性能对比绘图 (Training vs Validation)
+    # 7.2 性能对比绘图 (单图单文件保存)
     # =========================================================
-    # 💡 统一绘图函数：确保所有图片风格高度一致，符合 SCI 发表要求
-    def plot_performance(data_pairs, title_suffix, save_name):
-        fig, ax = plt.subplots(1, 2, figsize=(16, 6))
+    def save_final_plots(data_pairs, title_suffix, file_prefix):
         X_data, y_true = data_pairs
         
+        # 预先计算所有模型的概率，确保绘图与打印一致
+        model_probs = {}
         for name, clf in calibrated_results.items():
-            y_prob = clf.predict_proba(X_data)[:, 1]
-            
-            # ROC 曲线：衡量区分度
+            model_probs[name] = clf.predict_proba(X_data)[:, 1]
+
+        # --- 图 A: 纯 ROC 曲线 ---
+        plt.figure(figsize=(9, 8))
+        for name, y_prob in model_probs.items():
             fpr, tpr, _ = roc_curve(y_true, y_prob)
             auc_val = roc_auc_score(y_true, y_prob)
-            ax[0].plot(fpr, tpr, label=f'{name} (AUC={auc_val:.3f})')
-            
-            # Calibration 曲线：衡量准确度（预测概率 vs 实际发生率）
-            prob_true, prob_pred = calibration_curve(y_true, y_prob, n_bins=10)
-            ax[1].plot(prob_pred, prob_true, marker='o', label=name, markersize=5)
-
-        # ROC 图细节微调
-        ax[0].plot([0, 1], [0, 1], 'k--', alpha=0.5)
-        ax[0].set_title(f'ROC Curves ({title_suffix})', fontsize=14, fontweight='bold')
-        ax[0].set_xlabel('False Positive Rate')
-        ax[0].set_ylabel('True Positive Rate')
-        ax[0].legend(loc='lower right')
-
-        # Calibration 图细节微调
-        ax[1].plot([0, 1], [0, 1], 'k--', label='Perfectly Calibrated', alpha=0.5)
-        ax[1].set_title(f'Calibration Curves ({title_suffix})', fontsize=14, fontweight='bold')
-        ax[1].set_xlabel('Predicted Probability')
-        ax[1].set_ylabel('Actual Probability')
-        ax[1].legend(loc='upper left')
-
-        plt.tight_layout()
-        # 使用 bbox_inches='tight' 确保图例不被截断
-        plt.savefig(os.path.join(FIG_DIR, save_name), dpi=300, bbox_inches='tight')
+            plt.plot(fpr, tpr, label=f'{name} (AUC={auc_val:.3f})', lw=2)
+        
+        plt.plot([0, 1], [0, 1], color='gray', linestyle='--', lw=1)
+        plt.title(f'ROC Curves\n({title_suffix})', fontsize=15, fontweight='bold')
+        plt.xlabel('False Positive Rate', fontsize=12)
+        plt.ylabel('True Positive Rate', fontsize=12)
+        plt.legend(loc='lower right', fontsize=10)
+        plt.grid(alpha=0.2)
+        plt.savefig(os.path.join(FIG_DIR, f"Figure_ROC_{file_prefix}.png"), dpi=300, bbox_inches='tight')
         plt.show()
+        plt.close()
 
-    # --- 一键生成：训练集与验证集对比图 ---
-    print("\n📊 正在生成论文级性能对比图...")
-    plot_performance((X_train_final, y_train), "Training Group", "Figure_ROC_Calibration_Training.png")
-    plot_performance((X_test_final, y_test), "Validation Group", "Figure_ROC_Calibration_Validation.png")
+        # --- 图 B: 纯 Calibration 曲线 ---
+        plt.figure(figsize=(9, 8))
+        for name, y_prob in model_probs.items():
+            prob_true, prob_pred = calibration_curve(y_true, y_prob, n_bins=10)
+            plt.plot(prob_pred, prob_true, marker='o', label=name, markersize=6, lw=2)
+            
+        plt.plot([0, 1], [0, 1], color='gray', linestyle='--', label='Perfectly Calibrated')
+        plt.title(f'Calibration Curves\n({title_suffix})', fontsize=15, fontweight='bold')
+        plt.xlabel('Predicted Probability', fontsize=12)
+        plt.ylabel('Actual Probability', fontsize=12)
+        plt.legend(loc='upper left', fontsize=10)
+        plt.grid(alpha=0.2)
+        plt.savefig(os.path.join(FIG_DIR, f"Figure_Calib_{file_prefix}.png"), dpi=300, bbox_inches='tight')
+        plt.show()
+        plt.close()
+
+    # --- 最终执行：生成 4 张独立图片 ---
+    print("\n📊 正在生成 4 张独立的论文插图 (ROC & Calibration for Train/Val)...")
+    # 验证集图 (对应你终端输出的 0.83 左右)
+    save_final_plots((X_test_final, y_test), "Validation Group", "Validation")
+    # 训练集图 (对应你看到的 0.90 左右)
+    save_final_plots((X_train_final, y_train), "Training Group", "Training")
     # =========================================================
     # 8. 全资产保存
     # =========================================================
