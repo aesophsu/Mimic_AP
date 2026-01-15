@@ -24,7 +24,7 @@ WITH ranked_stays AS (
         i.*,
         ROW_NUMBER() OVER (
             PARTITION BY i.uniquepid 
-            ORDER BY i.hospitaladmitoffset DESC, i.unitadmitoffset DESC
+            ORDER BY i.hospitaladmitoffset ASC, i.unitadmitoffset ASC
         ) as stay_rank
     FROM eicu_derived.icustay_detail i
     INNER JOIN temp_ap_patients ap ON i.patientunitstayid = ap.patientunitstayid
@@ -187,12 +187,14 @@ SELECT
     MAX(NULLIF(spo2, -1)) AS spo2_max,
     -- 摄氏度转换逻辑：如果 > 50 (Fahrenheit), 转换为 Celsius
     MAX(CASE 
-        WHEN temperature > 50 THEN (temperature - 32) * 5/9 
-        ELSE temperature 
+        WHEN temperature BETWEEN 80 AND 115 THEN (temperature - 32) * 5/9
+        WHEN temperature BETWEEN 30 AND 45 THEN temperature
+        ELSE NULL 
     END) AS temp_max,
     MIN(CASE 
-        WHEN temperature > 50 THEN (temperature - 32) * 5/9 
-        ELSE temperature 
+        WHEN temperature BETWEEN 80 AND 115 THEN (temperature - 32) * 5/9
+        WHEN temperature BETWEEN 30 AND 45 THEN temperature
+        ELSE NULL 
     END) AS temp_min
 FROM eicu_derived.pivoted_vital 
 WHERE chartoffset BETWEEN -360 AND 1440 
@@ -225,7 +227,7 @@ SELECT
     MAX(CASE WHEN treatmentstring ILIKE '%ventilation%' 
                OR treatmentstring ILIKE '%intubat%' THEN 1 ELSE 0 END) AS vent_treatment_flag
 FROM eicu_crd.treatment
-WHERE treatmentoffset BETWEEN -360 AND 1440 
+WHERE treatmentoffset BETWEEN 1440 AND 10080 
   AND patientunitstayid IN (SELECT patientunitstayid FROM cohort_base)
 GROUP BY patientunitstayid;
 
@@ -238,7 +240,7 @@ SELECT
     patientunitstayid,
     1 AS vent_careplan_flag
 FROM eicu_crd.careplangeneral
-WHERE cplitemoffset BETWEEN -360 AND 1440
+WHERE cplitemoffset BETWEEN 1440 AND 10080
   AND (
       cplitemvalue ILIKE '%ventilat%' 
       OR cplitemvalue ILIKE '%intubat%' 
@@ -276,7 +278,7 @@ WHERE p.unitdischargestatus = 'Expired'
   AND p.unitdischargeoffset BETWEEN 1440 AND 2880
   AND p.patientunitstayid IN (SELECT patientunitstayid FROM cohort_base);
 --------------------------------------------------------------------------------
--- 7. 最终整合：严谨版 POF 判定与 28天死亡 (已修正早期死亡逻辑)
+-- 7. 最终整合：严谨版 POF 判定与 28天死亡 + composite_events
 --------------------------------------------------------------------------------
 DROP TABLE IF EXISTS eicu_cview.ap_external_validation;
 CREATE TABLE eicu_cview.ap_external_validation AS
@@ -292,11 +294,11 @@ WITH base_final AS (
             WHEN l.lab_ph_direct IS NOT NULL THEN l.lab_ph_direct
             WHEN l.lab_hco3 > 0 AND COALESCE(bg.bg_paco2, l.lab_paco2) > 0 THEN 
                  CAST(6.1 + LOG10(l.lab_hco3 / (0.0301 * COALESCE(bg.bg_paco2, l.lab_paco2))) AS NUMERIC)
-            WHEN aps.apache_ph IS NOT NULL THEN aps.apache_ph -- 修正点
+            WHEN aps.apache_ph IS NOT NULL THEN aps.apache_ph
             ELSE NULL
         END AS ph_min,
         
-        -- 其余生化指标 (BUN 兜底逻辑：若无 BUN，按 Cr*20 估算)
+        -- 其余生化指标
         COALESCE(l.bun_max, aps.apache_creatinine * 20) AS bun_max,
         COALESCE(l.bun_min, l.bun_max) AS bun_min,
         l.wbc_max, l.albumin_min, l.lactate_max,
@@ -334,34 +336,35 @@ SELECT
     *,
     -- POF 判定矩阵
     CASE 
-        WHEN early_death_24_48h = 1 THEN 0 
         WHEN raw_vaso = 1 AND icu_los_hours >= 24 THEN 1
         WHEN raw_vent = 1 AND icu_los_hours >= 48 THEN 1
         WHEN dialysis_flag = 1 OR creatinine_max > 1.9 THEN 1
-        WHEN death_28d = 1 AND icu_los_hours >= 48 THEN 1
         ELSE 0 
-    END AS pof
+    END AS pof,
+    
+    -- composite outcome: POF 或 28天死亡
+    CASE 
+        WHEN (raw_vaso = 1 AND icu_los_hours >= 24)
+          OR (raw_vent = 1 AND icu_los_hours >= 48)
+          OR dialysis_flag = 1
+          OR creatinine_max > 1.9
+          OR death_28d = 1  -- 改为引用 base_final 的列
+        THEN 1
+        ELSE 0
+    END AS composite_events
 FROM base_final;
 
 --------------------------------------------------------------------------------
--- 最终统计信息
+-- 最终统计信息（对齐 MIMIC 风格）
 --------------------------------------------------------------------------------
 SELECT 
-    COUNT(*) as total_cohort,
-    SUM(early_death_24_48h) as n_early_death_logic_0,
-    SUM(death_28d) as n_death_28d,
-    SUM(pof) as n_pof_final,
-    ROUND(AVG(pof)::numeric * 100, 2) as pof_prevalence_pct,
-    ROUND(COUNT(ph_min)::numeric / COUNT(*) * 100, 2) as ph_data_coverage_pct,
-    ROUND(COUNT(creatinine_max)::numeric / COUNT(*) * 100, 2) as creatinine_coverage_pct
-FROM eicu_cview.ap_external_validation;
-
-SELECT 
-    COUNT(*) AS total_n,
-    COUNT(bmi) AS bmi_not_null_n,
-    ROUND(COUNT(bmi) * 100.0 / COUNT(*), 2) AS bmi_fill_rate,
-    -- 看看 BMI 的分布，排除异常值
-    ROUND(AVG(bmi)::numeric, 2) AS avg_bmi,
-    MIN(bmi) AS min_bmi,
-    MAX(bmi) AS max_bmi
+    COUNT(*) AS total_count,
+    COUNT(DISTINCT uniquepid) AS unique_patients,
+    SUM(pof) AS pof_count,
+    SUM(death_28d) AS deaths_28d,
+    SUM(early_death_24_48h) AS early_deaths,
+    SUM(composite_events) AS composite_events,
+    ROUND(COUNT(ph_min)::numeric / COUNT(*) * 100, 2) AS ph_data_coverage_pct,
+    ROUND(COUNT(creatinine_max)::numeric / COUNT(*) * 100, 2) AS creatinine_coverage_pct,
+    ROUND(COUNT(bmi)::numeric / COUNT(*) * 100, 2) AS bmi_fill_rate
 FROM eicu_cview.ap_external_validation;
