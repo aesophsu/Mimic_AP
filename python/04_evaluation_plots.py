@@ -100,33 +100,52 @@ def run_module_04_debug_version():
     plt.close()
 
     # --------------------------------------------------------
-    # [图 2] SHAP 解释 (针对 XGBoost)
+    # [图 2] SHAP 解释 (针对 SVM - 全样本精确版 + 自动缓存)
     # --------------------------------------------------------
-    print("\n🧪 [Step 3/4] 正在生成 XGBoost SHAP 解释 (针对修正标签后的审计)...")
+    print("\n🧪 [Step 3/4] 正在处理 SVM SHAP 解释 (全样本精确审计)...")
+    SHAP_CACHE_PATH = os.path.join(MODEL_DIR, "svm_shap_values_full.pkl")
+
     try:
-        xgb_calibrated = all_models['XGBoost']
-        xgb_raw = xgb_calibrated.calibrated_classifiers_[0].estimator
+        # 1. 尝试加载现有的缓存
+        if os.path.exists(SHAP_CACHE_PATH):
+            print(f"   ♻️ 检测到缓存，正在加载预计算的全样本 SHAP 值...")
+            shap_values = joblib.load(SHAP_CACHE_PATH)
+        else:
+            print("   ⏳ 未检测到缓存，启动全样本 SVM SHAP 计算...")
+            print("   📢 注意：去掉样本限制后计算压力较大，预计耗时 20-40 分钟，请保持程序运行。")
+            
+            svm_model = all_models['SVM']
+            
+            # 定义预测概率函数
+            def svm_predict(data):
+                return svm_model.predict_proba(data)[:, 1]
+
+            # 去掉 max_samples 限制，使用完整的 X_test_np 作为背景参考
+            # 这样计算出的 SHAP 值最具学术严谨性
+            masker = shap.maskers.Independent(X_test_np) 
+            
+            explainer = shap.Explainer(svm_predict, masker)
+            
+            # 执行计算 (silent=True 屏蔽进度条刷屏，防止控制台卡死)
+            shap_values = explainer(X_test_np, silent=True)
+            
+            # 保存结果到本地
+            joblib.dump(shap_values, SHAP_CACHE_PATH)
+            print(f"   💾 全样本 SHAP 计算完成并已永久保存至: {SHAP_CACHE_PATH}")
+
+        # 2. 绘图
+        plt.figure(figsize=(12, 10)) # 略微增加高度以适应更多特征
+        shap.plots.beeswarm(shap_values, max_display=12, show=False)
+        plt.title('SVM SHAP Summary: Global Impact on POF Risk (Full Audit)', fontsize=14, fontweight='bold')
+        plt.xlabel("SHAP Value (Impact on POF Probability)")
         
-        explainer = shap.TreeExplainer(xgb_raw)
-        # 使用 Numpy 数组以确保特征对应正确
-        shap_values = explainer.shap_values(X_test_np)
-        
-        print(f"   ✅ SHAP 计算完成。SHAP 数组维度: {np.shape(shap_values)}")
-        
-        plt.figure(figsize=(12, 8))
-        shap.summary_plot(
-            shap_values, 
-            X_test_np, 
-            feature_names=selected_features, 
-            show=False,
-            plot_type="dot"
-        )
-        plt.title('SHAP Feature Importance: Drivers of POF Risk', fontsize=14)
         plt.tight_layout()
-        plt.savefig(os.path.join(FIG_DIR, "02_SHAP_Summary.png"), dpi=300)
+        plt.savefig(os.path.join(FIG_DIR, "02_SHAP_Summary_SVM_Full.png"), dpi=300)
         plt.close()
+        print("   ✅ 精确版 SHAP 摘要图已生成: 02_SHAP_Summary_SVM_Full.png")
+
     except Exception as e:
-        print(f"   ⚠️ SHAP 生成跳过: {e}")
+        print(f"   ⚠️ SHAP 模块运行失败: {e}")
 
     # --------------------------------------------------------
     # Step 4: 全模型 DCA 临床价值审计 (修复索引错误并全量化)
@@ -173,7 +192,6 @@ def run_module_04_debug_version():
     plt.grid(alpha=0.2)
     plt.savefig(os.path.join(FIG_DIR, "03_DCA_Full_Comparison.png"), dpi=300)
     plt.close()
-
     # --------------------------------------------------------
     # 总结输出 (Table 2 终极版)
     # --------------------------------------------------------
