@@ -111,37 +111,58 @@ def run_module_02():
     # =========================================================
     # 4. 📊 自动化统计分析 (Table 1 & Table 2)
     # =========================================================
-    from tableone import TableOne
+    # =========================================================
+    # 4. 📊 自动化统计分析 (Table 1 升级版)
+    # =========================================================
     
-    # 定义展示变量
-    columns_for_table = [
+    # 重新定义展示变量：将结局指标置于末尾
+    clinical_features = [
         'admission_age', 'bmi', 'heart_failure', 'chronic_kidney_disease', 
         'malignant_tumor', 'bun_min', 'creatinine_max', 'lactate_max', 
-        'pao2fio2ratio_min', 'wbc_max', 'alt_max', 'ast_max',
+        'pao2fio2ratio_min', 'wbc_max', 'alt_max', 'ast_max'
+    ]
+    # 结局指标列
+    outcome_cols = ['mortality_28d', 'composite_outcome']
+    
+    columns_for_table = [c for c in (clinical_features + outcome_cols) if c in df_clean.columns]
+    
+    # 分类变量清单 (用于统计格式化)
+    categorical = [
+        'heart_failure', 'chronic_kidney_disease', 'malignant_tumor', 
         'mortality_28d', 'composite_outcome'
     ]
-    
-    # 自动识别存在的列与分类变量
-    columns_for_table = [c for c in columns_for_table if c in df_clean.columns]
-    categorical = [c for c in ['heart_failure', 'chronic_kidney_disease', 'malignant_tumor', 
-                               'mortality_28d', 'composite_outcome'] if c in columns_for_table]
+    categorical = [c for c in categorical if c in columns_for_table]
 
     # --- 4.1 生成 Table 1 (POF vs Non-POF) ---
-    print("\n📊 正在生成 Table 1: 全人群基线特征 (按 POF 分组)...")
-    # 识别非正态分布变量（简单逻辑：所有连续变量通常在医学中都按非正态处理）
+    print("\n📊 正在生成 Table 1: 临床基线与多结局对比 (By POF)...")
+    
+    # 这里的逻辑优化：展示中位数[IQR]
     non_normal_cols = [c for c in columns_for_table if c not in categorical]
 
-    # 修改 TableOne 调用
-    t1 = TableOne(df_clean, columns=columns_for_table, categorical=categorical, 
-                  nonnormal=non_normal_cols, # 新增：指定非正态变量
-                  groupby='pof', pval=True, missing=True)
+    t1 = TableOne(
+        df_clean, 
+        columns=columns_for_table, 
+        categorical=categorical, 
+        nonnormal=non_normal_cols, 
+        groupby='pof', 
+        pval=True, 
+        missing=True,
+        display_all=False # 仅显示阳性比例，让表格更整洁
+    )
     print(t1.tabulate(tablefmt="github"))
     
     # --- 4.2 生成 Table 2 (Subgroup: Renal vs No-Renal) ---
     print("\n🔍 正在生成 Table 2: 肾功能亚组对比 (按 subgroup_no_renal 分组)...")
-    t2 = TableOne(df_clean, columns=columns_for_table, categorical=categorical, 
-                  nonnormal=non_normal_cols, # <--- 建议在这里也加上这行
-                  groupby='subgroup_no_renal', pval=True, missing=True)
+    t2 = TableOne(
+        df_clean, 
+        columns=columns_for_table, 
+        categorical=categorical, 
+        nonnormal=non_normal_cols, 
+        groupby='subgroup_no_renal', 
+        pval=True, 
+        missing=True,
+        display_all=False
+    )
     print(t2.tabulate(tablefmt="github"))
 
     # --- 4.3 统一保存统计报告 ---
@@ -171,6 +192,9 @@ def run_module_02():
     print(f"   - 样本总数: {df_clean.shape[0]}")
     print(f"   - 最终特征数 (含标签与亚组标记): {df_clean.shape[1]}")
     print(f"   - 主要结局 (POF) 发生率: {df_clean['pof'].mean():.2%}")
+    print("\n⚠️ 建模预警：")
+    print(f"   当前数据包含 3 个结局列: {all_labels}")
+    print(f"   进入模块 03 建模时，请确保 X 变量已剔除非目标结局，防止数据泄露！")
     print("-" * 60)
     print(f"✅ 模块 02 优化完成! 数据存至: {model_ready_path}")
     # --- 在模块末尾 df_clean.to_csv 之后添加 ---
