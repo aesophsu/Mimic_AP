@@ -40,14 +40,22 @@ def run_module_01():
             v_max = df[col].max()
             print(f"{col:<25} | {missing:>8.2f}% | {med:>10.2f} | {mean:>10.2f} | {v_max:>10.2f}")
             initial_stats.append(col)
+    # 1. 首先：修正 POF 标签 (保持你原有的 24-48h 修正逻辑)
     if 'early_death_24_48h' in df.columns:
         early_death_mask = (df['early_death_24_48h'] == 1)
-        correction_count = ((df['early_death_24_48h'] == 1) & (df['pof'] == 0)).sum()
-        
         df.loc[early_death_mask, 'pof'] = 1
-        df.loc[early_death_mask, 'composite_outcome'] = 1
-        
-        print(f"\n🩺 标签审计：修正了 {correction_count} 例早亡导致的 POF 假阴性。")
+        print(f"   ✅ [主要结局] 已完成早亡修正。")
+
+    # 2. 其次：确保 28d 死亡标签也是准的 (如果有该列)
+    # 只要 24-48h 死亡了，那他肯定也属于 28d 死亡
+    if 'early_death_24_48h' in df.columns and 'mortality_28d' in df.columns:
+        df.loc[early_death_mask, 'mortality_28d'] = 1
+
+    # 3. 最后：生成真正的混合结局 (核心修改)
+    # 逻辑：只要满足 POF 或 28d 死亡，就是阳性
+    if 'pof' in df.columns and 'mortality_28d' in df.columns:
+        df['composite_outcome'] = ((df['pof'] == 1) | (df['mortality_28d'] == 1)).astype(int)
+        print(f"   ✅ [混合结局] 已通过 POF 与 28d 死亡的并集构建完成。")
     # =========================================================
     # 3. 核心保护白名单 (强制保留关键变量)
     # =========================================================
