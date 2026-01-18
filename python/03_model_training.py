@@ -400,6 +400,25 @@ def train_pipeline(target):
     # =========================================================
     # 保存模型字典
     joblib.dump(calibrated_results, os.path.join(SAVE_DIR, f"all_models_{target}.pkl"))
+    # --- [新增] 自动保存置信区间 (CI) 审计数据 ---
+    ci_audit_data = {}
+    sub_ci_audit_data = {}
+
+    for name, clf in calibrated_results.items():
+        # 1. 计算全人群 CI
+        ci_low_m, ci_high_m = get_auc_ci(clf, X_test_final, y_test)
+        auc_main = roc_auc_score(y_test, clf.predict_proba(X_test_final)[:, 1])
+        ci_audit_data[name] = f"{auc_main:.3f} ({ci_low_m:.3f}-{ci_high_m:.3f})"
+        
+        # 2. 计算亚组 CI
+        ci_low_s, ci_high_s = get_auc_ci(clf, X_test_sub, y_test_sub)
+        auc_sub = roc_auc_score(y_test_sub, clf.predict_proba(X_test_sub)[:, 1])
+        sub_ci_audit_data[name] = f"{auc_sub:.3f} ({ci_low_s:.3f}-{ci_high_s:.3f})"
+
+    # 保存 CI 字典，供模块 04 直接调用
+    joblib.dump(ci_audit_data, os.path.join(SAVE_DIR, f"ci_main_{target}.pkl"))
+    joblib.dump(sub_ci_audit_data, os.path.join(SAVE_DIR, f"ci_sub_{target}.pkl"))
+    print(f"📊 {target} 的置信区间数据已自动同步至本地文件。")
     # 保存该结局筛选出的 Top 12 特征名
     joblib.dump(selected_features, os.path.join(SAVE_DIR, f"selected_features_{target}.pkl"))
     
