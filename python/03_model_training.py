@@ -37,15 +37,12 @@ for d in [SAVE_DIR, FIG_DIR]:
         os.makedirs(d)
 
 def run_module_03_all_outcomes():
-    # 定义你想要研究的两个结局
-    study_targets = ['pof', 'composite_outcome']
-    
-    for current_target in study_targets:
-        print("\n" + "展开分析结局: " + current_target.upper())
-        # 调用重构后的训练函数
-        train_pipeline_for_target(current_target)
+    # 核心：循环跑两个结局
+    for current_target in ['pof', 'composite_outcome']:
+        print(f"\n\n{'='*20} 正在分析结局: {current_target.upper()} {'='*20}")
+        train_pipeline(current_target)
 
-def train_pipeline_for_target(target):
+def train_pipeline(target):
     print("="*60)
     print("🚀 运行终极重构模块 03: 5 种模型竞赛 + 动态对数处理")
     print("="*60)
@@ -142,10 +139,10 @@ def train_pipeline_for_target(target):
     X_test_imp = mice_imputer.transform(X_test)
     X_test_std = scaler.transform(X_test_imp)
 
-    # 保存资产供跨库验证
-    joblib.dump(scaler, os.path.join(SAVE_DIR, "scaler.pkl"))
-    joblib.dump(mice_imputer, os.path.join(SAVE_DIR, "mice_imputer.pkl"))
-    joblib.dump(existing_skewed, os.path.join(SAVE_DIR, "skewed_cols.pkl"))
+    # 保存预处理资产
+    joblib.dump(scaler, os.path.join(SAVE_DIR, f"scaler_{target}.pkl"))
+    joblib.dump(mice_imputer, os.path.join(SAVE_DIR, f"mice_imputer_{target}.pkl"))
+    joblib.dump(existing_skewed, os.path.join(SAVE_DIR, f"skewed_cols_{target}.pkl"))
 
     # =========================================================
     # 5. LASSO 特征降维 (Top 12) - 学术增强版
@@ -232,7 +229,7 @@ def train_pipeline_for_target(target):
     study = optuna.create_study(direction='maximize')
     study.optimize(objective, n_trials=100)    
     # 持久化 Study 对象
-    joblib.dump(study, os.path.join(SAVE_DIR, "optuna_xgboost_study.pkl"))
+    joblib.dump(study, os.path.join(SAVE_DIR, f"optuna_xgboost_study_{target}.pkl"))
     print(f"✅ Optuna 寻优完成。最佳 AUC: {study.best_value:.4f}")
     
     # 使用最佳参数重新训练
