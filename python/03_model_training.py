@@ -36,7 +36,16 @@ for d in [SAVE_DIR, FIG_DIR]:
     if not os.path.exists(d):
         os.makedirs(d)
 
-def run_module_03_optimized():
+def run_module_03_all_outcomes():
+    # 定义你想要研究的两个结局
+    study_targets = ['pof', 'composite_outcome']
+    
+    for current_target in study_targets:
+        print("\n" + "展开分析结局: " + current_target.upper())
+        # 调用重构后的训练函数
+        train_pipeline_for_target(current_target)
+
+def train_pipeline_for_target(target):
     print("="*60)
     print("🚀 运行终极重构模块 03: 5 种模型竞赛 + 动态对数处理")
     print("="*60)
@@ -65,15 +74,16 @@ def run_module_03_optimized():
             
     if 'gender' in df.columns:
         df['gender'] = df['gender'].map({'M': 1, 'F': 0})
-    
-    target = 'pof'
-    # 排除列表
-    drop_list = [
-        target, 'mortality_28d', 'renal_pof', 'resp_pof', 'cv_pof', 
-        'subgroup_no_renal', 'hosp_mortality', 'overall_mortality',
-        'composite_outcome'
+
+    outcome_cols = [
+        'pof', 'mortality_28d', 'composite_outcome', 
+        'renal_pof', 'resp_pof', 'cv_pof'
+    ]    
+    drop_list = outcome_cols + [
+        'subgroup_no_renal', 'hosp_mortality', 'overall_mortality', 'stay_id'
     ]
     
+
     # 🛡️ 自动剔除非数值特征 (处理 ValueError: could not convert string to float)
     text_cols = df.select_dtypes(include=['object']).columns.tolist()
     final_drop = list(set(drop_list + text_cols))
@@ -190,7 +200,7 @@ def run_module_03_optimized():
     ax2.set_xlabel('Number of Non-zero Coefficients', fontsize=12, labelpad=10)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(FIG_DIR, "Academic_Lasso_CV.png"), dpi=300)
+    plt.savefig(os.path.join(FIG_DIR, f"Academic_Lasso_{target}.png"), dpi=300)
     plt.show()
     plt.close()
 
@@ -233,11 +243,11 @@ def run_module_03_optimized():
     # 7. 🏆 5 种模型算法竞赛 (含概率校准)
     # =========================================================
     models = {
-        "Logistic Regression": LogisticRegression(max_iter=1000),
-        "Decision Tree": DecisionTreeClassifier(max_depth=4, min_samples_leaf=20),
-        "SVM": SVC(probability=True, kernel='rbf', C=1.0), 
-        "Random Forest": RandomForestClassifier(n_estimators=200, max_depth=5, random_state=42),
-        "XGBoost": best_xgb
+        "Logistic Regression": LogisticRegression(max_iter=1000, class_weight='balanced'),
+        "Decision Tree": DecisionTreeClassifier(max_depth=4, min_samples_leaf=20, class_weight='balanced'),
+        "SVM": SVC(probability=True, kernel='rbf', C=1.0, class_weight='balanced'), 
+        "Random Forest": RandomForestClassifier(n_estimators=200, max_depth=5, random_state=42, class_weight='balanced'),
+        "XGBoost": best_xgb 
     }
 
     # 准备亚组测试索引
@@ -334,7 +344,7 @@ def run_module_03_optimized():
         plt.ylabel('True Positive Rate', fontsize=12)
         plt.legend(loc='lower right', fontsize=10)
         plt.grid(alpha=0.2)
-        plt.savefig(os.path.join(FIG_DIR, f"Figure_ROC_{file_prefix}.png"), dpi=300, bbox_inches='tight')
+        plt.savefig(os.path.join(FIG_DIR, f"Figure_ROC_{file_prefix}_{target}.png"), dpi=300, bbox_inches='tight')
         plt.show()
         plt.close()
 
@@ -350,7 +360,7 @@ def run_module_03_optimized():
         plt.ylabel('Actual Probability', fontsize=12)
         plt.legend(loc='upper left', fontsize=10)
         plt.grid(alpha=0.2)
-        plt.savefig(os.path.join(FIG_DIR, f"Figure_Calib_{file_prefix}.png"), dpi=300, bbox_inches='tight')
+        plt.savefig(os.path.join(FIG_DIR, f"Figure_Calib_{file_prefix}_{target}.png"), dpi=300, bbox_inches='tight')
         plt.show()
         plt.close()
 
@@ -361,18 +371,18 @@ def run_module_03_optimized():
     # 训练集图 (对应你看到的 0.90 左右)
     save_final_plots((X_train_final, y_train), "Training Group", "Training")
     # =========================================================
-    # 8. 全资产保存
+    # 8. 全资产保存 (修改位置：增加 {target} 后缀)
     # =========================================================
-    joblib.dump(calibrated_results, os.path.join(SAVE_DIR, "all_models.pkl"))
-    joblib.dump(selected_features, os.path.join(SAVE_DIR, "selected_features.pkl"))
+    joblib.dump(calibrated_results, os.path.join(SAVE_DIR, f"all_models_{target}.pkl"))
+    joblib.dump(selected_features, os.path.join(SAVE_DIR, f"selected_features_{target}.pkl"))
     
-    # 保存测试集 DataFrame 格式供模块 08 使用
+    # 保存测试集 DataFrame 格式
     X_test_final_df = pd.DataFrame(X_test_final, columns=selected_features)
-    joblib.dump((X_test_final_df, y_test), os.path.join(SAVE_DIR, "test_data_main.pkl"))
-    joblib.dump((X_test_sub, y_test_sub), "../models/test_data_sub.pkl")
+    joblib.dump((X_test_final_df, y_test), os.path.join(SAVE_DIR, f"test_data_main_{target}.pkl"))
+    joblib.dump((X_test_sub, y_test_sub), os.path.join(SAVE_DIR, f"test_data_sub_{target}.pkl"))
     
     print("-" * 60)
     print("✅ 模块 03 成功！线性模型与树模型已完成动态处理并保存。")
 
 if __name__ == "__main__":
-    run_module_03_optimized()
+    run_module_03_all_outcomes()
