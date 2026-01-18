@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 from sklearn.linear_model import Lasso
 from sklearn.metrics import roc_curve, roc_auc_score, brier_score_loss
 from sklearn.calibration import calibration_curve # 将它从 calibration 模块导入# 屏蔽警告
+from sklearn.utils import resample # 确保在顶部或此处导入
 import warnings
 warnings.filterwarnings('ignore')
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -263,6 +264,51 @@ def run_module_03_optimized():
         
         calibrated_results[name] = clf
         print(f"{name:<20} | {auc_main:.4f}      | {auc_sub:.4f}          | {brier:.4f}")
+
+    # =========================================================
+    # 7.1 统计学增强：Bootstrap 计算 95% CI (全人群 + 亚组)
+    # =========================================================
+    from sklearn.utils import resample
+
+    def get_auc_ci(model, X_test_data, y_test_data, n_bootstraps=1000):
+        """通用的 Bootstrap AUC 置信区间计算函数"""
+        bootstrapped_scores = []
+        for i in range(n_bootstraps):
+            # 使用 i 作为随机种子，确保结果可复现且每次采样不同
+            X_res, y_res = resample(X_test_data, y_test_data, random_state=i)
+            if len(np.unique(y_res)) < 2: 
+                continue
+            prob = model.predict_proba(X_res)[:, 1]
+            bootstrapped_scores.append(roc_auc_score(y_res, prob))
+        
+        sorted_scores = np.array(bootstrapped_scores)
+        sorted_scores.sort()
+        # 计算 2.5% 和 97.5% 分位数
+        low = sorted_scores[int(0.025 * len(sorted_scores))]
+        high = sorted_scores[int(0.975 * len(sorted_scores))]
+        return low, high
+
+    print("\n" + "="*110)
+    print(f"{'Algorithm':<20} | {'Main AUC (95% CI)':<30} | {'No-Renal AUC (95% CI)':<30} | {'Brier':<8}")
+    print("-" * 110)
+
+    for name, clf in calibrated_results.items():
+        # --- 1. 全人群指标 ---
+        y_prob = clf.predict_proba(X_test_final)[:, 1]
+        auc_main = roc_auc_score(y_test, y_prob)
+        brier = brier_score_loss(y_test, y_prob)
+        ci_low_m, ci_high_m = get_auc_ci(clf, X_test_final, y_test)
+        main_auc_str = f"{auc_main:.3f} ({ci_low_m:.3f}-{ci_high_m:.3f})"
+        
+        # --- 2. 亚组 (No-Renal) 指标 ---
+        # 使用预先准备好的 sub_mask 提取亚组数据
+        ci_low_s, ci_high_s = get_auc_ci(clf, X_test_sub, y_test_sub)
+        auc_sub = roc_auc_score(y_test_sub, clf.predict_proba(X_test_sub)[:, 1])
+        sub_auc_str = f"{auc_sub:.3f} ({ci_low_s:.3f}-{ci_high_s:.3f})"
+        
+        # --- 3. 打印格式化结果 ---
+        print(f"{name:<20} | {main_auc_str:<30} | {sub_auc_str:<30} | {brier:.4f}")
+    print("="*110)
 
     # =========================================================
     # 7.2 性能对比绘图 (单图单文件保存)
