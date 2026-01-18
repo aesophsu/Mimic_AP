@@ -369,6 +369,7 @@ def run_module_03_optimized():
     # 保存测试集 DataFrame 格式供模块 08 使用
     X_test_final_df = pd.DataFrame(X_test_final, columns=selected_features)
     joblib.dump((X_test_final_df, y_test), os.path.join(SAVE_DIR, "test_data_main.pkl"))
+    joblib.dump((X_test_sub, y_test_sub), "../models/test_data_sub.pkl")
     
     print("-" * 60)
     print("✅ 模块 03 成功！线性模型与树模型已完成动态处理并保存。")
