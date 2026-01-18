@@ -36,11 +36,38 @@ for d in [SAVE_DIR, FIG_DIR]:
     if not os.path.exists(d):
         os.makedirs(d)
 
+FINAL_SUMMARY_STORAGE = []
 def run_module_03_all_outcomes():
-    # 核心：循环跑两个结局
-    for current_target in ['pof', 'composite_outcome']:
-        print(f"\n\n{'='*20} 正在分析结局: {current_target.upper()} {'='*20}")
-        train_pipeline(current_target)
+    """
+    核心控制函数：循环执行不同结局的分析，并汇总最终报表
+    """
+    global FINAL_SUMMARY_STORAGE
+    FINAL_SUMMARY_STORAGE = [] # 清空缓存
+    
+    # 结局列表：现在包含了死亡率模型
+    targets = ['pof', 'composite_outcome', 'mortality_28d']
+    
+    for current_target in targets:
+        print(f"\n\n{'='*30} 正在分析结局: {current_target.upper()} {'='*30}")
+        # 获取该结局下的所有模型性能指标
+        target_results = train_pipeline(current_target)
+        FINAL_SUMMARY_STORAGE.extend(target_results)
+
+    # --- 核心优化：生成全局性能汇总表 ---
+    summary_df = pd.DataFrame(FINAL_SUMMARY_STORAGE)
+    
+    # 按照结局和 AUC 排序，方便查看哪个模型最强
+    summary_df = summary_df.sort_values(by=['Outcome', 'Main AUC'], ascending=[True, False])
+    
+    # 保存汇总表
+    summary_save_path = os.path.join(SAVE_DIR, "all_outcomes_performance_summary.csv")
+    summary_df.to_csv(summary_save_path, index=False)
+    
+    print("\n" + "#"*60)
+    print("🏆 所有结局分析完成！最终性能汇总表已生成：")
+    print(f"📍 路径: {summary_save_path}")
+    print("#"*60)
+    print(summary_df.to_string(index=False))
 
 def train_pipeline(target):
     print("="*60)
@@ -360,6 +387,7 @@ def train_pipeline(target):
         plt.savefig(os.path.join(FIG_DIR, f"Figure_Calib_{file_prefix}_{target}.png"), dpi=300, bbox_inches='tight')
         plt.show()
         plt.close()
+        
 
     # --- 最终执行：生成 4 张独立图片 ---
     print("\n📊 正在生成 4 张独立的论文插图 (ROC & Calibration for Train/Val)...")
@@ -368,18 +396,53 @@ def train_pipeline(target):
     # 训练集图 (对应你看到的 0.90 左右)
     save_final_plots((X_train_final, y_train), "Training Group", "Training")
     # =========================================================
-    # 8. 全资产保存 (修改位置：增加 {target} 后缀)
+    # 8. 全资产保存 (确保每个 Outcome 独立保存)
     # =========================================================
+    # 保存模型字典
     joblib.dump(calibrated_results, os.path.join(SAVE_DIR, f"all_models_{target}.pkl"))
+    # 保存该结局筛选出的 Top 12 特征名
     joblib.dump(selected_features, os.path.join(SAVE_DIR, f"selected_features_{target}.pkl"))
     
-    # 保存测试集 DataFrame 格式
+    # 保存测试集数据，方便后续离线做 SHAP 或其他分析
     X_test_final_df = pd.DataFrame(X_test_final, columns=selected_features)
     joblib.dump((X_test_final_df, y_test), os.path.join(SAVE_DIR, f"test_data_main_{target}.pkl"))
     joblib.dump((X_test_sub, y_test_sub), os.path.join(SAVE_DIR, f"test_data_sub_{target}.pkl"))
+
+    # =========================================================
+    # 9. 构建最终性能汇总报表
+    # =========================================================
+    current_outcome_summary = [] # 使用更明确的变量名
     
+    for name, clf in calibrated_results.items():
+        # 执行 Bootstrap 计算全人群和亚组的 95% CI
+        ci_low_m, ci_high_m = get_auc_ci(clf, X_test_final, y_test)
+        ci_low_s, ci_high_s = get_auc_ci(clf, X_test_sub, y_test_sub)
+        
+        # 计算全人群指标
+        y_prob = clf.predict_proba(X_test_final)[:, 1]
+        auc_main = roc_auc_score(y_test, y_prob)
+        brier = brier_score_loss(y_test, y_prob)
+        
+        # 计算亚组 (No-Renal) 指标
+        y_prob_sub = clf.predict_proba(X_test_sub)[:, 1]
+        auc_sub = roc_auc_score(y_test_sub, y_prob_sub)
+
+        # 整理成字典，添加进列表
+        current_outcome_summary.append({
+            "Outcome": target,
+            "Algorithm": name,
+            "Main AUC": round(auc_main, 4),
+            "Main AUC (95% CI)": f"{auc_main:.3f} ({ci_low_m:.3f}-{ci_high_m:.3f})",
+            "No-Renal AUC": round(auc_sub, 4),
+            "No-Renal AUC (95% CI)": f"{auc_sub:.3f} ({ci_low_s:.3f}-{ci_high_s:.3f})",
+            "Brier Score": round(brier, 4)
+        })
+
     print("-" * 60)
-    print("✅ 模块 03 成功！线性模型与树模型已完成动态处理并保存。")
+    print(f"✅ 结局 {target.upper()} 分析及资产保存成功！")
+    
+    # 返回给 run_module_03_all_outcomes 汇总
+    return current_outcome_summary
 
 if __name__ == "__main__":
     run_module_03_all_outcomes()
