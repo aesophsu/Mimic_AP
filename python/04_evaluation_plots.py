@@ -30,7 +30,7 @@ def run_module_04_debug_version():
 
     # 1. 环境准备：加载模型、特征列表及外部验证集
     print("📂 [Step 1/4] 正在检索特定终点的序列化模型与数据资产...")
-    endpoints = ['pof', 'death_28d', 'combined'] 
+    endpoints = ['pof', 'composite_outcome', 'mortality_28d'] 
     for target in endpoints:
         print(f"\n" + "="*70)
         print(f"🚀 正在处理研究终点: {target.upper()}")
