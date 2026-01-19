@@ -11,33 +11,46 @@ import matplotlib.pyplot as plt
 BASE_DIR = ".."
 RAW_EICU_PATH = os.path.join(BASE_DIR, "data/eicu_raw_ap.csv") 
 SAVE_DIR = os.path.join(BASE_DIR, "data/cleaned")
-FEATURES_PATH = os.path.join(BASE_DIR, "models/selected_features.pkl")
+MODELS_DIR = os.path.join(BASE_DIR, "models")
 
-def run_module_07_v2():
-    print("="*60)
-    print("🚀 模块 07: eICU 多中心对齐、审计与特征分析")
-    print("="*60)
+def run_module_07(target='pof'):
+    print("\n" + "="*70)
+    print(f"🚀 模块 07: eICU 多中心对齐 (结局: {target.upper()})")
+    print("="*70)
 
-    # 1. 加载模型资产
-    if not os.path.exists(FEATURES_PATH):
-        print("❌ 错误：找不到特征清单。")
+    # 1. 动态加载该结局在 MIMIC 训练阶段产生的资产
+    assets_path = os.path.join(MODELS_DIR, f"train_assets_{target}.pkl")
+    if not os.path.exists(assets_path):
+        print(f"❌ 错误：找不到结局 {target} 的资产文件 {assets_path}。请先运行模块 03。")
         return
-    selected_features = joblib.load(FEATURES_PATH)
+        
+    train_assets = joblib.load(assets_path)
+    selected_features = train_assets['selected_features']
+    mimic_medians = train_assets['medians']
+    skewed_cols_to_log = train_assets['skewed_cols']
+    if not os.path.exists(RAW_EICU_PATH):
+        print(f"❌ 错误：找不到 eICU 原始数据 {RAW_EICU_PATH}")
+        return
     df = pd.read_csv(RAW_EICU_PATH)
-
-    # 2. 列名映射 (对齐模块 01-03 的命名契约)
+    
+    # 2. 列名映射 (保持不变，确保与 MIMIC 变量名对齐)
     mapping = {
         'age': 'admission_age',
         'ph_min': 'ph_min',
         'creatinine_max': 'creatinine_max',
+        'creatinine_min': 'creatinine_min',
         'bun_max': 'bun_max',
         'wbc_max': 'wbc_max',
         'ast_max': 'ast_max',
+        'alt_max': 'alt_max',
+        'bilirubin_total_max': 'bilirubin_total_max',
         'lactate_max': 'lactate_max',
         'albumin_min': 'albumin_min',
         'temp_max': 'temperature_max',
         'mbp_min': 'mean_bp_min',
         'spo2_max': 'spo2_max',
+        'glucose_max': 'glucose_max',
+        'inr_max': 'inr_max',
         'gender': 'gender'
     }
     df.rename(columns=mapping, inplace=True)
@@ -46,10 +59,8 @@ def run_module_07_v2():
     if 'gender' in df.columns:
         df['gender'] = df['gender'].map({'M': 1, 'F': 0, 1: 1, 0: 0})
 
-    # ---------------------------------------------------------
-    # 3. 核心：特征缺失率审计报告
-    # ---------------------------------------------------------
-    print("\n🔍 [1/3] 特征对齐审计报告 (MIMIC Top 12 -> eICU):")
+    # 3. 特征缺失率审计
+    print(f"\n🔍 [1/3] 审计: {target} 所需的特征在 eICU 中的匹配情况")
     audit_data = []
     for feat in selected_features:
         if feat in df.columns:
@@ -59,56 +70,57 @@ def run_module_07_v2():
             missing = 100.0
             status = "❌ 完全缺失"
         audit_data.append({'Feature': feat, 'Missing%': f"{missing:.2f}%", 'Status': status})
-    
     audit_df = pd.DataFrame(audit_data)
     print(audit_df.to_string(index=False))
 
-    # ---------------------------------------------------------
     # 4. 执行数据变换 (Log1p + Clipping)
-    # ---------------------------------------------------------
-    print("\n🧪 [2/3] 应用偏态转换 (Log1p) 与 物理裁剪...")
-    
-    # 需要 Log 的偏态指标 (遵循模块 02)
-    skewed_features = ['creatinine_max', 'bun_max', 'wbc_max', 'ast_max', 'lactate_max']
-    
-    for col in skewed_features:
+    print(f"\n🧪 [2/3] 应用 {target} 专属偏态转换 (Log1p)...")
+    for col in skewed_cols_to_log:
         if col in df.columns:
-            # 记录转换前后的中位数用于验证单位对齐
-            pre_med = df[col].median()
+            # 执行 Log1p
             df[col] = np.log1p(df[col].astype(float).clip(lower=0))
-            # print(f"   - {col:<15}: 原中位数 {pre_med:.2f} -> Log后 {df[col].median():.2f}")
             
     if 'ph_min' in df.columns:
         df['ph_min'] = df['ph_min'].clip(6.8, 7.8)
 
-    # ---------------------------------------------------------
     # 5. 生成模型就绪矩阵
-    # ---------------------------------------------------------
+
     print("\n🛠️ [3/3] 构建验证矩阵与最终清洗...")
     X_eicu = pd.DataFrame(index=df.index)
     for feat in selected_features:
         if feat in df.columns:
-            # 用中位数填补 eICU 的缺失值 (模拟模块 03 的简单插补部分)
+            # 优先用 eICU 自身的中位数填充，若 eICU 缺失该特征，则用 MIMIC 的记忆补全
             X_eicu[feat] = df[feat].fillna(df[feat].median())
         else:
-            # 针对完全缺失列，填补 0 (标准化后的均值)
-            X_eicu[feat] = 0.0
+            # 填补 MIMIC 训练集该特征的中位数（或者是对数变换后的中位数）
+            X_eicu[feat] = mimic_medians.get(feat, 0.0)
             
     # 特征自检：打印转换后的关键统计分布
     print("\n📊 转换后指标分布自检 (验证单位对齐):")
     inspect_cols = [c for c in ['ph_min', 'creatinine_max', 'temperature_max'] if c in X_eicu.columns]
     print(X_eicu[inspect_cols].describe().loc[['min', '50%', 'max']])
 
-    # ---------------------------------------------------------
     # 6. 保存数据
-    # ---------------------------------------------------------
-    eicu_ready_path = os.path.join(SAVE_DIR, "eicu_for_model.csv")
-    df_ready = pd.concat([X_eicu, df[['pof']]], axis=1)
-    df_ready.to_csv(eicu_ready_path, index=False)
+    eicu_ready_path = os.path.join(SAVE_DIR, f"eicu_for_model_{target}.csv")
+    # 确保目标标签列存在 (eICU 的 csv 里必须有对应结局列)
+    if target in df.columns:
+        df_ready = pd.concat([X_eicu, df[[target]]], axis=1)
+        df_ready.to_csv(eicu_ready_path, index=False)
+        print("-" * 60)
+        print(f"✅ 结局 {target.upper()} 处理成功！")
+        print(f"📁 验证数据保存至: {eicu_ready_path}")
+    else:
+        print(f"⚠️ 警告：eICU 原始数据中找不到结局列 '{target}'，仅保存特征矩阵。")
+        X_eicu.to_csv(eicu_ready_path, index=False)
     
-    print("-" * 60)
-    print(f"✅ 模块 07 成功完成！共处理 {len(df_ready)} 例 eICU 患者。")
-    print(f"📁 验证就绪数据已存至: {eicu_ready_path}")
-
+def run_all_eicu_alignment():
+    """循环处理所有结局"""
+    targets = ['pof', 'composite_outcome', 'mortality_28d']
+    for t in targets:
+        try:
+            run_module_07(t)
+        except Exception as e:
+            print(f"❌ 处理结局 {t} 时发生意外错误: {e}")
+            
 if __name__ == "__main__":
-    run_module_07_v2()
+    run_all_eicu_alignment()
