@@ -222,9 +222,9 @@ def run_module_04_debug_version():
             all_summary_results.append({
                 "Endpoint": target.upper(),
                 "Algorithm": name,
-                "Main AUC (95% CI)": main_auc_ci,
-                "No-Renal AUC (95% CI)": sub_auc_ci,
-                "DCA Benefit Window": dca_win
+                "Main AUC (95% CI)": main_val,
+                "No-Renal AUC (95% CI)": sub_val,
+                "DCA Benefit Window": window
             })
             print(f"{name:<20} | {main_val:<25} | {sub_val:<25} | {window:<15}")
         if all_summary_results:
