@@ -197,12 +197,28 @@ GROUP BY patientunitstayid;
 
 DROP TABLE IF EXISTS temp_pf_ratio;
 CREATE TEMP TABLE temp_pf_ratio AS
+WITH pf_calc AS (
+    SELECT 
+        patientunitstayid,
+        chartoffset,
+        pao2,
+        -- 智能处理 FiO2：兼容小数、百分比和缺失值
+        CASE 
+            WHEN fio2 IS NULL THEN 0.21
+            WHEN fio2 >= 21 THEN fio2 / 100.0
+            WHEN fio2 BETWEEN 0.21 AND 1.0 THEN fio2
+            ELSE 0.21 -- 兜底：异常值默认按室温空气计
+        END AS fio2_decimal
+    FROM eicu_derived.pivoted_bg
+    WHERE pao2 > 0 -- 只要有氧分压数据就保留
+      AND chartoffset BETWEEN -360 AND 1440
+)
 SELECT 
     patientunitstayid,
-    MIN(pao2 / (fio2 / 100.0)) AS pao2fio2ratio_min
-FROM eicu_derived.pivoted_bg
-WHERE fio2 >= 21 AND pao2 > 0
-  AND chartoffset BETWEEN -360 AND 1440
+    MIN(pao2 / fio2_decimal) AS pao2fio2ratio_min
+FROM pf_calc
+-- 确保只保留 AP 队列中的患者
+WHERE patientunitstayid IN (SELECT patientunitstayid FROM cohort_base)
 GROUP BY patientunitstayid;
 
 --------------------------------------------------------------------------------
@@ -348,7 +364,7 @@ WITH base_final AS (
         -- 新特征引用
         l.aniongap_max, l.aniongap_min, l.glucose_lab_max, 
         l.bilirubin_total_min, l.alp_max, l.hemoglobin_min,
-        COALESCE(pf.pao2fio2ratio_min, 400) AS pao2fio2ratio_min,
+        pf.pao2fio2ratio_min AS pao2fio2ratio_min,
         COALESCE(comb.malignant_tumor, 0) AS malignant_tumor,
     
         v.heart_rate_max, v.heart_rate_min, v.resp_rate_max, v.resp_rate_min,
@@ -370,7 +386,7 @@ WITH base_final AS (
     LEFT JOIN temp_interventions intv ON c.patientunitstayid = intv.patientunitstayid
     LEFT JOIN temp_vent_careplan cp ON c.patientunitstayid = cp.patientunitstayid
     LEFT JOIN temp_early_death ed ON c.patientunitstayid = ed.patientunitstayid
-    LEFT JOIN temp_pf_ratio pf ON c.patientunitstayid = pf.patientunitstayid -- 修正：添加 JOIN
+    LEFT JOIN temp_pf_ratio pf ON c.patientunitstayid = pf.patientunitstayid
     LEFT JOIN temp_comorbidity comb ON c.patientunitstayid = comb.patientunitstayid -- 修正：添加 JOIN
 )
 
