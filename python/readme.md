@@ -107,15 +107,31 @@
 ## 第三阶段：模型评价、可解释性与决策分析 (Evaluation & Interpretability)
 
 ### 模块 04: 性能可视化与 SHAP 解释 (Visualization & Explainable AI)
-- **核心内容**：
-  - 鲁棒性验证 (ROC Comparison)：绘制 SVM 在全人群与亚组中的 ROC 曲线。
-  - 可解释性审计 (SHAP Summary Plot)：利用 SHAP 对 Random Forest 进行归因分析，揭示特征贡献。
-  - 临床决策获益 (Decision Curve Analysis, DCA)：比较模型与“Treat All”、“Treat None”策略的净获益。
-  - 可视化产出：生成出版质量图表（ROC、SHAP、DCA）。
-- **审计笔记**：
-  - 临床价值叙事：在论文 Results 中描述：“Our model provides a higher net benefit compared to the 'treat-all' strategy across a wide range of risk thresholds.”
-  - SHAP 与临床一致性：展示如 BUN 越高风险越高。
-  - 技术细节修复：处理校准包装器，确保 SHAP 可靠性。
+#### 核心内容
+
+* **鲁棒性验证 (Robustness Validation)**：通过 `Main AUC` 与 `No-Renal Sub-AUC` 的双重审计，验证模型在全人群及特定生理亚组（非肾源性）中的区分度，确保预测效能不依赖于单一器官指标。
+* **可解释性审计 (SHAP Summary Plot)**：利用 **SHAP (SHapley Additive exPlanations)** 对核心模型（SVM/XGBoost）进行归因分析。通过蒙特卡洛采样揭示各临床特征对风险预测的正负贡献及非线性关系。
+* **临床决策获益 (Decision Curve Analysis, DCA)**：计算并绘制各模型的净获益曲线（Net Benefit），量化模型在不同临床风险阈值下优于“全干预（Treat All）”或“不干预（Treat None）”策略的程度。
+* **可视化产出 (Publication-Ready Outputs)**：生成符合 SCI 投稿标准的高清图表（300 DPI），包含多终点 ROC 组图、SHAP 摘要图及 DCA 决策图。
+
+---
+
+#### 🎨 临床价值叙事 (Results Section Drafting)
+
+在撰写论文结果（Results）时，你可以直接引用模块 04 生成的数据：
+
+> **性能总结**：针对三种研究终点（POF, Composite Outcome, Mortality），机器学习模型均展现出优异的区分度。其中 XGBoost 在复合终点上取得了最高 AUC ( [95% CI: -])。
+> **临床实用性**：决策曲线分析显示，在广泛的风险阈值范围内（例如 POF 终点的  至  之间），使用本研究所构建的模型进行干预决策，其净获益（Net Benefit）显著高于“全干预”或“不干预”的传统策略。
+> **特征贡献**：SHAP 解释图揭示了 、 和  是跨终点的关键预测因子。正如临床预期，高水平的血尿素氮（）与风险评分的正向增加显著相关，体现了模型逻辑与临床认知的高度一致。
+
+---
+
+#### 🛠 技术细节修复与审计笔记
+
+* **校准包装器兼容性**：针对模块 03 的 `CalibratedClassifierCV`，模块 04 内部封装了预测概率函数，解决了 SHAP 无法直接读取校准后模型内部权重的技术壁垒，确保了归因结果的数学可靠性。
+* **性能汇总自动化**：生成的 `Table2_Model_Performance_Summary.csv` 自动整合了多终点的 Main AUC、Sub-AUC 和 DCA 获益窗口，实现了从原始模型到论文表格的零人工误差转换。
+* **缓存机制**：针对耗时的 SHAP 计算引入了 `target-specific` 缓存，支持在大规模参数调优后快速复现可视化结果。
+
 
 ### 模块 05: 基线特征描述与单因素分析 (Baseline Characteristics & Univariate Analysis)
 - **核心内容**：
