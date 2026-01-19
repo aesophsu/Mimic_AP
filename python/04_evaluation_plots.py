@@ -31,6 +31,7 @@ def run_module_04_debug_version():
     # 1. 环境准备：加载模型、特征列表及外部验证集
     print("📂 [Step 1/4] 正在检索特定终点的序列化模型与数据资产...")
     endpoints = ['pof', 'composite_outcome', 'mortality_28d'] 
+    all_summary_results = []
     for target in endpoints:
         print(f"\n" + "="*70)
         print(f"🚀 正在处理研究终点: {target.upper()}")
@@ -57,7 +58,7 @@ def run_module_04_debug_version():
                 sub_ci_data = {}
             print(f"   ✅ 加载成功: 包含 {len(all_models)} 个模型")
             print(f"   ✅ 特征列表: {selected_features}")
-            print(f"   ✅ 测试集维度: {X_test_np.shape}, POF 流行率: {np.mean(y_test):.2%}")
+            print(f"   ✅ 测试集维度: {X_test_np.shape}, {target.upper()} 流行率: {np.mean(y_test):.2%}")
         except Exception as e:
             print(f"   ❌ {target} 加载失败: {e}")
             continue # 跳过当前结局，继续下一个
@@ -218,7 +219,26 @@ def run_module_04_debug_version():
             main_val = ci_data.get(name, "N/A")
             sub_val = sub_ci_data.get(name, "N/A")
             window = model_windows.get(name, "N/A")
+            all_summary_results.append({
+                "Endpoint": target.upper(),
+                "Algorithm": name,
+                "Main AUC (95% CI)": main_auc_ci,
+                "No-Renal AUC (95% CI)": sub_auc_ci,
+                "DCA Benefit Window": dca_win
+            })
             print(f"{name:<20} | {main_val:<25} | {sub_val:<25} | {window:<15}")
+        if all_summary_results:
+            df_summary = pd.DataFrame(all_summary_results)
+            save_table_path = os.path.join(FIG_DIR, "Table2_Model_Performance_Summary.csv")
+            df_summary.to_csv(save_table_path, index=False, encoding='utf-8-sig') # utf-8-sig 确保 Excel 打开不乱码
+        
+            print("\n" + "📊" + " "*20 + "学术论文汇总表 (Table 2) 已生成" + " "*20 + "📊")
+            print("="*115)
+            print(df_summary.to_string(index=False))
+            print("="*115)
+            print(f"💾 表格已保存至: {save_table_path}")
+        else:
+            print("⚠️ 未能生成汇总表，请检查模型加载是否成功。")
         print("="*115)
         print(f"🎉 模块 04 运行成功！图表位于: {FIG_DIR}")
     
