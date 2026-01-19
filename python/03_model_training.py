@@ -460,7 +460,23 @@ def train_pipeline(target):
     print("-" * 60)
     print(f"✅ 结局 {target.upper()} 分析及资产保存成功！")
     
-    # 返回给 run_module_03_all_outcomes 汇总
+
+    train_assets = {
+        'medians': X_train.median().to_dict(), # 该结局对应的训练集中位数
+        'skewed_cols': existing_skewed,        # 偏态处理列表
+        'selected_features': selected_features # 该结局筛选出的 Top 12
+    }
+    
+    # 文件名带上 target 后缀，如 train_assets_pof.pkl
+    assets_save_path = os.path.join(SAVE_DIR, f"train_assets_{target}.pkl")
+    joblib.dump(train_assets, assets_save_path)
+
+    # 同步保存一份专属特征清单，方便其他模块调用
+    joblib.dump(selected_features, os.path.join(SAVE_DIR, f"selected_features_{target}.pkl"))
+
+    print(f"📦 [资产同步] 专属基准已存至: {assets_save_path}")
+    print(f"📦 [特征同步] 专属特征清单已存至: selected_features_{target}.pkl")
+        
     return current_outcome_summary
 
 if __name__ == "__main__":
