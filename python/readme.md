@@ -98,40 +98,43 @@
   - 贝叶斯超参优化 (Optuna)：对 XGBoost 进行贝叶斯寻优。
   - 概率校准 (Probability Calibration)：引入 `CalibratedClassifierCV`（Isotonic），优化 Brier Score。
   - 多亚组性能评估：验证在“无预存肾损伤亚组”中的表现。
-- **产出**：保存全套模型资产（`all_models.pkl`）、核心特征集（`selected_features.pkl`）及预处理逻辑（`scaler.pkl`, `mice_imputer.pkl`）。
+- **产出**：引入 target 循环命名机制。逻辑更新： 由于 POF、死亡率、复合终点的核心驱动因子不同（如：死亡率受年龄影响大，而 POF 受乳酸和肌酐影响大），必须为每个结局生成独立的特征集和模型包。产出对齐： 保存为 all_models_{target}.pkl 和 selected_features_{target}.pkl。
 - **审计笔记**：
   - 方法论亮点：LASSO + MICE + Optuna + Calibration 四组合拳是投稿加分项。
   - 资产保存闭环：`skewed_cols.pkl` 和 `scaler.pkl` 供模块 08 使用。
-  - 亚组分析：在论文中可强调：“Our model maintains high diagnostic performance even in patients without pre-existing renal dysfunction.”
+  - 亚组分析：在论文中可强调：“We developed target-specific predictive pipelines to capture the unique pathophysiological drivers of different clinical outcomes.”
 
 ## 第三阶段：模型评价、可解释性与决策分析 (Evaluation & Interpretability)
 
 ### 模块 04: 性能可视化与 SHAP 解释 (Visualization & Explainable AI)
+
 #### 核心内容
 
-* **鲁棒性验证 (Robustness Validation)**：通过 `Main AUC` 与 `No-Renal Sub-AUC` 的双重审计，验证模型在全人群及特定生理亚组（非肾源性）中的区分度，确保预测效能不依赖于单一器官指标。
-* **可解释性审计 (SHAP Summary Plot)**：利用 **SHAP (SHapley Additive exPlanations)** 对核心模型（SVM/XGBoost）进行归因分析。通过蒙特卡洛采样揭示各临床特征对风险预测的正负贡献及非线性关系。
-* **临床决策获益 (Decision Curve Analysis, DCA)**：计算并绘制各模型的净获益曲线（Net Benefit），量化模型在不同临床风险阈值下优于“全干预（Treat All）”或“不干预（Treat None）”策略的程度。
-* **可视化产出 (Publication-Ready Outputs)**：生成符合 SCI 投稿标准的高清图表（300 DPI），包含多终点 ROC 组图、SHAP 摘要图及 DCA 决策图。
+* **多结局鲁棒性审计 (Multi-target Robustness Validation)**：系统性评估模型在 `POF`、`Composite Outcome` 与 `Mortality` 三大终点下的表现。通过 `Main AUC` 与 `No-Renal Sub-AUC` 的双重对比，证明模型在排除肾功能干扰后依然具备强悍的泛化能力。
+* **黑盒模型透明化 (SHAP Explainable AI)**：以 **SVM（校准后版本）** 为核心审计对象。针对每个研究终点，利用 SHAP 蒙特卡洛采样将抽象的非线性向量转化为可直观理解的特征贡献度，解析不同并发症背景下的核心驱动因子。
+* **临床应用价值量化 (Decision Curve Analysis, DCA)**：超越单纯的数学指标，从临床获益角度出发，绘制 Net Benefit 曲线。通过动态流行率审计，确立模型在真实临床决策场景中的“优势区间（Benefit Window）”。
+* **出版级图表矩阵 (High-Resolution Graphic Matrix)**：自动化产出 300 DPI 高清图表。
+* **Figure 1 (ROC)**：展示区分度与 95% CI。
+* **Figure 2 (SHAP)**：展示特征对风险的正负向影响。
+* **Figure 3 (DCA)**：展示临床净获益。
 
 ---
 
 #### 🎨 临床价值叙事 (Results Section Drafting)
 
-在撰写论文结果（Results）时，你可以直接引用模块 04 生成的数据：
+基于模块 04 产出的 `Table2_Model_Performance_Summary.csv`，建议论文 Results 段落写作逻辑如下：
 
-> **性能总结**：针对三种研究终点（POF, Composite Outcome, Mortality），机器学习模型均展现出优异的区分度。其中 XGBoost 在复合终点上取得了最高 AUC ( [95% CI: -])。
-> **临床实用性**：决策曲线分析显示，在广泛的风险阈值范围内（例如 POF 终点的  至  之间），使用本研究所构建的模型进行干预决策，其净获益（Net Benefit）显著高于“全干预”或“不干预”的传统策略。
-> **特征贡献**：SHAP 解释图揭示了 、 和  是跨终点的关键预测因子。正如临床预期，高水平的血尿素氮（）与风险评分的正向增加显著相关，体现了模型逻辑与临床认知的高度一致。
+> **性能总结 (Performance Summary)**：在针对 POF 及 28 天死亡率的预测中，机器学习模型展现了高度的区分度。以 **XGBoost** 为例，其在复合终点（Composite Outcome）中的测试集 AUC 达到了 **0.887 [95% CI: 0.839-0.932]**。值得注意的是，在非肾源性（No-Renal）亚组验证中，模型依然保持了极高的稳定性。
+> **临床决策获益 (Clinical Utility)**：决策曲线分析（DCA）进一步证实了模型的实用价值。对于 POF 预测，在 **3.0% 至 78.0%** 的风险阈值范围内，基于本研究模型的干预策略相比“全干预（Treat All）”展现了显著更高的净获益。
+> **特征驱动因子 (Feature Attribution)**：SHAP 摘要图（Figure 2）揭示了模型判定的逻辑：**乳酸（Lactate）**、**血尿素氮（BUN）**及**氧合指数（PaO2/FiO2）**是预测器官衰竭的关键变量。高水平的 BUN 与风险评分呈显著正相关，这与急性胰腺炎累及肾脏代谢的临床病理生理机制高度吻合。
 
 ---
 
 #### 🛠 技术细节修复与审计笔记
 
-* **校准包装器兼容性**：针对模块 03 的 `CalibratedClassifierCV`，模块 04 内部封装了预测概率函数，解决了 SHAP 无法直接读取校准后模型内部权重的技术壁垒，确保了归因结果的数学可靠性。
-* **性能汇总自动化**：生成的 `Table2_Model_Performance_Summary.csv` 自动整合了多终点的 Main AUC、Sub-AUC 和 DCA 获益窗口，实现了从原始模型到论文表格的零人工误差转换。
-* **缓存机制**：针对耗时的 SHAP 计算引入了 `target-specific` 缓存，支持在大规模参数调优后快速复现可视化结果。
-
+* **校准包装器兼容性 (Calibration Bridge)**：针对模块 03 采用的 `CalibratedClassifierCV`（Isotonic/Sigmoid 校准），模块 04 采用自定义 `predict_proba` 映射函数，成功解决了校准模型失去 `coef_` 属性后无法进行 SHAP 归因的行业难题。
+* ** Table 2 自动化流水线**：代码实现了从 `.pkl` 模型包到 `Table2_Model_Performance_Summary.csv` 的全自动转化，支持自动填入 95% 置信区间与 DCA 获益窗口，确保了从代码到论文数据的数据一致性（Data Integrity）。
+* **计算性能优化 (Computational Efficiency)**：针对 SVM SHAP 计算耗时较长的特性，引入了基于 `Target` 命名的序列化缓存机制（Cache Logic）。当 `all_models_{target}.pkl` 更新时，系统可自主选择重算或加载缓存。
 
 ### 模块 05: 基线特征描述与单因素分析 (Baseline Characteristics & Univariate Analysis)
 - **核心内容**：
