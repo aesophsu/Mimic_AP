@@ -36,22 +36,24 @@ def run_module_07(target='pof'):
     # 2. 列名映射 (保持不变，确保与 MIMIC 变量名对齐)
     mapping = {
         'age': 'admission_age',
-        'ph_min': 'ph_min',
+        'gender': 'gender',
+        'pao2fio2': 'pao2fio2ratio_min', 
+        'ph_min': 'ph_min', 'ph_max': 'ph_max',
+        'spo2_min': 'spo2_min', 'spo2_max': 'spo2_max',
         'creatinine_max': 'creatinine_max',
-        'creatinine_min': 'creatinine_min',
-        'bun_max': 'bun_max',
-        'wbc_max': 'wbc_max',
-        'ast_max': 'ast_max',
-        'alt_max': 'alt_max',
-        'bilirubin_total_max': 'bilirubin_total_max',
+        'bun_max': 'bun_max', 'bun_min': 'bun_min',
         'lactate_max': 'lactate_max',
-        'albumin_min': 'albumin_min',
-        'temp_max': 'temperature_max',
-        'mbp_min': 'mean_bp_min',
-        'spo2_max': 'spo2_max',
-        'glucose_max': 'glucose_max',
-        'inr_max': 'inr_max',
-        'gender': 'gender'
+        'aniongap_max': 'aniongap_max', 'aniongap_min': 'aniongap_min',
+        'calcium_min': 'lab_calcium_min',
+        'glucose_max': 'glucose_lab_max',
+        'bicarbonate_min': 'bicarbonate_min',
+        'wbc_max': 'wbc_max', 'wbc_min': 'wbc_min',
+        'albumin_max': 'albumin_max', 'albumin_min': 'albumin_min',
+        'alp_max': 'alp_max', 'ast_max': 'ast_max', 'alt_max': 'alt_max',
+        'bilirubin_min': 'bilirubin_total_min',
+        'hemoglobin_min': 'hemoglobin_min',
+        'ptt_min': 'ptt_min',
+        'tumor': 'malignant_tumor'
     }
     df.rename(columns=mapping, inplace=True)
     
