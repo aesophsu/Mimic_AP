@@ -36,124 +36,213 @@
 * **数据填充率保障**：SQL 脚本中内置了 `COALESCE` 与 `LEFT JOIN` 级联打捞机制（如 LAR、TBAR 等比值计算），确保了机器学习核心预测子的高填充率（Fill-rate），为模块 03 的 MICE 插补提供了高质量的冷启动数据。
 
 
+### 模块 00-B: eICU 多中心数据特征审计与对齐 (SQL Level)
 
-#### **模块 00-B: eICU 多中心数据特征审计与对齐 (SQL Level)**
-  - **核心内容**：
-    - 精细化单位清洗 (Unit Auditing)：
-      - **肌酐 (Creatinine)**：通过 `>30` 的逻辑判定，自动识别并校准 `umol/L` 与 `mg/dL`，抹平了多中心数据最常见的量纲陷阱。
-      - **温度 (Temperature)**：内置华氏度与摄氏度的自动识别转换逻辑，确保生理指标的物理一致性。
-    - pH 值多维度打捞 (pH Recovery Logic)：
-      - 这是本研究的重大亮点。pH 是 AP-POF 预测的核心，但在 eICU 中缺失率极高。
-      - 你的 SQL 实现了 **“直接提取 (Lab) -> 血气打捞 (BG) -> 公式计算 (Henderson-Hasselbalch) -> APACHE 兜底”** 的四级打捞机制，极大提升了模型在外部验证集的完整度。
-    - POF 结局的“跨库模拟” (Outcome Emulation)：
-      - eICU 不像 MIMIC 那样有现成的持续器官衰竭评分。你通过 `CarePlan`（护理计划）、`Treatment`（治疗）结合 `ICU_LOS`（住院时间）巧妙地模拟了 **“持续性（Persistence）”**：
-      - **呼吸衰竭**：机械通气且 ICU 时长 （排除术后常规插管）。
-      - **循环衰竭**：使用升压药且 ICU 时长 。
-  - **产出**：生成对齐后的 eICU 数据集，供后续外部验证使用。
-  - **审计笔记**：
-    - 方法论亮点：pH 打捞机制可作为论文的创新点描述：“To address high missingness in eICU, we implemented a multi-tier pH recovery algorithm, increasing data completeness by [X]%.”
-    - 跨库一致性：这模块直接支撑模块 07/08 的外部验证，确保 eICU 数据在 SQL 层面已与 MIMIC 对齐，减少分布偏移。
+#### **核心内容**
+
+* **异构数据物理归一化 (Automated Unit & Scale Alignment)**：
+* **肌酐 (Creatinine) 智能校准**：通过 `>30` 的阈值探测自动识别 `umol/L`，并应用除以 **88.4** 的转换逻辑，统一为 `mg/dL` 尺度，抹平多中心数据最常见的量纲陷阱。
+* **温度 (Temperature) 物理对齐**：通过 `80-115°F` 逻辑区间判定华氏度，并自动化转换为摄氏度，确保生理指标的物理一致性。
+* **生理学区间清洗 (Range Scrubbing)**：对身高 (120-250cm)、体重 (30-300kg) 及 BMI (10-60) 实施严格的解剖生理学区间过滤，剔除系统占位符噪声。
+
+
+* **pH 值四级打捞算法 (Tiered pH Recovery Algorithm)**：
+* 针对 eICU 核心预测因子 pH 缺失率高的难题，构建了**“直接提取 -> 血气同步 -> 公式推算 -> 系统兜底”**的闭环打捞链：
+1. **直接提取 (Lab)**：从常规生化表中提取直接测量值。
+2. **血气对齐 (BG)**：同步打捞 `pivoted_bg` 表中的实时监测数据。
+3. **公式推算 (Physiological Derivation)**：利用 **Henderson-Hasselbalch** 公式  进行动态补救。
+4. **APACHE 兜底**：利用 `apacheapsvar` 评分组件中的预处理数据完成最终打捞。
+
+
+
+
+* **POF 结局的“临床逻辑模拟” (Outcome Emulation & Logic Alignment)**：
+* 在缺乏逐日 SOFA 评分的 eICU 环境下，利用“干预措施 + 暴露时长”构建高可信度结局标签：
+* **呼吸衰竭**：`Ventilation`（含 CarePlan 与 Treatment 双重识别）且 ICU 时长  小时（严格排除术后常规插管）。
+* **循环衰竭**：多类血管活性药物（含加压素、肾上腺素增强识别）且 ICU 时长  小时。
+* **肾脏衰竭**：`CRRT/透析`干预或肌酐最高值 。
+
+
+* **竞争风险对齐**：同步引入 `early_death_24_48h`（24-48h 内死亡），确保结局定义的统计逻辑与 MIMIC 开发集完全同质。
+
+
+
+#### **产出**
+
+* 生成外部验证集母表 `ap_external_validation`，其数据分布与物理量纲已与 MIMIC 开发集完成深度对齐。
+
+#### **审计笔记**
+
+* **创新亮点叙事**：在论文中可将其描述为：“To bridge the granular gap between databases, we developed a multi-tier recovery pipeline for critical features like pH, achieving a [X]% increase in data density through physiological formula-based derivation (Henderson-Hasselbalch).”
+* **跨库一致性保障**：该模块通过对结局判定逻辑的“降级模拟”与对特征单位的“智能识别”，从 SQL 底层解决了 Domain Shift 问题，为后续模块的外部验证稳定性提供了数学保障。
 
 ## 第一阶段：数据治理与临床场景构建 (Data Engineering)
 
-根据您的要求，我已更新了 **模块 01** 的详细说明。这份说明不仅涵盖了代码逻辑，还从学术论文的角度完善了审计笔记，特别强调了解决 **跨库数据偏移（Domain Shift）** 的核心创新点。
 
----
-
----
-
-#### **模块 01: 原始数据清洗与跨库单位校准 (Data Cleaning & Unit Harmonization)**
+### **模块 01: 原始数据清洗与跨库单位校准 (Data Cleaning & Unit Harmonization)**
 
 * **核心内容**：
-* **结局指标精准提取 (Outcome Refinement)**：
-* 基于时间戳锁定 **28天死亡率 (`mortality_28d`)**，并同步提取多维度器官衰竭指标（POF）。
-* 整合 **复合结局 (`composite_outcome`)**，确保生存分析与临床预后逻辑闭环。
+* **结局标签的逻辑重构与早亡修正 (Outcome Logic Enforcement)**：
+* **早亡偏倚修正**：代码通过 `early_death_24_48h` 标记，对 `pof`（持续性器官衰竭）进行回填。确保因病情极其危重而在 48 小时内死亡、无法完成持续性判定采样周期的患者，被正确计入阳性结局，避免生存偏倚（Survivor Bias）。
+* **复合终点对齐**：通过 `(pof == 1) | (mortality_28d == 1)` 的并集运算构建 `composite_outcome`，实现生存分析与临床预后逻辑的严谨闭环。
 
 
-* **缺失率过滤与白名单保护 (Feature Selection)**：
-* **剔除标准**：自动识别缺失率  的变量进行剔除。
-* **白名单（强制保留）**：针对乳酸 (`lactate`)、氧合指数 (`pao2fio2ratio`)、肌酐 (`creatinine`)、尿素氮 (`bun`) 及核心暴露因素 **BMI** 实施强制保留。
-* **明确排除**：**淀粉酶 (`amylase`) 不再作为保留特征**，以优化特征空间并减少时间窗偏移产生的噪声。
+* **缺失率过滤与核心白名单保护 (Feature Selection & Safeguarding)**：
+* **剔除标准**：自动识别缺失率  的非核心变量进行剔除。
+* **白名单（强制保留）**：针对乳酸 (`lactate`)、氧合指数 (`pao2fio2ratio`)、肌酐 (`creatinine`)、尿素氮 (`bun`)、转氨酶 (`ast/alt`) 及核心暴露因素 **BMI** 实施强制保留，即使其缺失率较高，也确保为后续 MICE 多重插补保留核心特征空间。
 
 
-* **跨库单位审计与自动校准 (Unit Auditing & Alignment)**：
-* **BUN**：检测量级并应用 **2.801** 转换系数，将 `mmol/L` 统一为 `mg/dL`。
-* **AST/ALT**：利用中位数探测技术自动识别潜在的 Log 尺度，并执行反 Log（`expm1`）还原。
-* **Fibrinogen**：自动校准为 `mg/dL` 量级，确保与 eICU 验证集处于同一物理尺度。
+* **动态跨库单位审计与自动校准 (Database-aware Unit Alignment)**：
+* **BUN (尿素氮)**：代码引入 `database` 感知逻辑，若检测到 eICU 库中中位数显著偏低（指示为 `mmol/L`），则自动应用 **2.801** 转换系数，将其统一至 MIMIC 标准的 `mg/dL`。
+* **AST/ALT (转氨酶)**：通过中位数探测识别潜在的 Log 尺度，应用 `np.expm1()` 进行反向还原，确保生理指标回归到原始物理意义下的数值。
+* **Fibrinogen (纤维蛋白原)**：自动识别 `g/L` 尺度，并校准为 `mg/dL` 量级（乘以 100），消除跨库量纲陷阱。
 
 
 * **异常值鲁棒性处理 (Robustness Scaling)**：
-* 执行 **1%-99% 盖帽处理 (Clipping)**，在保护生理真实性的前提下，抑制因传感器异常或极端录入产生的离群值干扰。
+* 执行 **1%-99% 盖帽处理 (Clipping)**，在保护生理真实性的前提下，抑制因传感器异常或极端录入（如 BMI 达到极端值）产生的离群值干扰。
 
 
 
 
-* **产出**：生成标准物理尺度数据集 `mimic_for_table1.csv`，供后续基线描述和特征工程使用。
+* **产出**：生成标准物理尺度数据集 `mimic_for_table1.csv`，作为 **Table 1 (基线描述)** 的唯一官方数据源。
 * **审计笔记**：
-* **物理尺度对齐说明**：在论文 Methods 中可描述为：“To minimize the domain shift between datasets, we implemented an automated unit auditing mechanism based on median distribution detection, ensuring physical alignment of laboratory scales.”
-* **路径闭环**：该模块确保了 MIMIC 与 eICU 的物理量纲完全一致。Table 1 展示将采用此模块产出的原始尺度数据，以符合临床判读习惯。
+* **物理尺度对齐说明**：在论文 Methods 中可描述为：“To address laboratory heterogeneity across disparate EHR systems, we implemented a database-aware unit auditing mechanism, recalibrating scales (e.g., BUN, AST, Fibrinogen) based on population-level median distributions.”
+* **早亡修正的重要性**：强调：“The inclusion of early-death cases (24-48h) into the primary outcome prevents underestimation of severity in patients who died before fulfilling the 48-hour persistent organ failure criteria.”
+* **路径闭环**：该模块确保了 MIMIC 与 eICU 的物理量纲完全一致，Table 1 展示将采用此模块产出的原始尺度数据，以符合临床判读习惯。
+
+
+### **模块 02: 临床场景定义与数据泄露防护 (Clinical Scenarios & Leakage Prevention)**
+
+* **核心内容**：
+* **严苛的数据泄露防护 (Data Leakage Safeguard)**：
+* **临床评分剔除**：系统性识别并剔除了 SOFA, SAPS II, APS III, OASIS 等重症监护评分。由于这些评分包含未来 24h 的聚合生理信息，纳入预测模型会导致性能虚高。
+* **干预措施剔除**：显式移除机械通气 (`vent_flag`)、升压药 (`vaso_flag`) 等后续治疗指标。确保模型仅依赖“基线生理状态”进行早期风险识别，而非识别“医生治疗行为”。
+* **非生物特征清理**：移除 ID（Subject/HADM/Stay ID）、时间戳及冗余结局（LOS、死亡时间），消除非生理性噪声。
+
+
+* **临床亚组定义与分层审计 (Subgroup Stratification)**：
+* **“无预存肾损伤”亚组**：基于模块 01 物理校准后的肌酐值，定义 `Creatinine < 1.5 mg/dL` 且无慢性肾病史 (CKD) 的样本集。
+* **数据库感知审计 (Database-aware Audit)**：内置跨库分布审查逻辑，自动对比 MIMIC 与 eICU 在该亚组上的比例（如样本量分布、占比差异），预防中心化偏倚。
+
+
+* **自动化统计报告 (Automated Statistical Profiling)**：
+* **出版级 TableOne 产出**：利用 `tableone` 库自动计算中位数 `[IQR]` 与频率分布。
+* **Table 1 (POF vs. Non-POF)**：通过非正态分布假设检验 (Kruskal-Wallis)，揭示疾病早期核心驱动因子的显著性差异。
+* **Table 2 (Subgroup Comparison)**：对比肾功能亚组基线，为后续敏感性分析提供统计基石。
+
+
+* **工程优化与物理尺度保持**：
+* **Raw Scale 策略**：在统计阶段坚持不做数学转换（如 Log），确保报表数值符合临床直觉（如肌酐展现为 `1.2` 而非归一化后的数值）。
+* **显式内存释放**：引入 `gc.collect()` 机制，在生成大型统计表后主动清理内存，确保 Python 管道在处理多中心大数据时的稳定性。
 
 
 
-### 模块 02: 临床场景定义与数据泄露防护 (Clinical Scenarios & Leakage Prevention)
-- **核心内容**：
-  - 数据泄露防护（核心审计）：系统性剔除了 SOFA、SAPS II、APS III 等临床评分系统，以及呼吸机、血管活性药物等后续治疗指标，确保模型仅基于入院 24 小时内的“基线状态”进行预测。
-  - 预测因子精炼：移除非生物学特征（ID、时间戳）及冗余结局指标（LOS、死亡时间）。
-  - 亚组定义（临床敏感性分析）：基于模块 01 修正后的原始肌酐值，定义了“无预存肾损伤”亚组（Creatinine < 1.5 mg/dL 且无 CKD 史）。
-  - 尺度一致性保持：保持原始物理量级，将数学转换（如 Log）后置。
-- **产出**：生成 `mimic_for_model.csv`，作为机器学习管道的最终输入。
-- **审计笔记**：
-  - 数据安全性：在论文 Methods 中强调：“To ensure clinical applicability and avoid data leakage, we excluded dynamic physiological scores and post-admission treatments.”
-  - 亚组逻辑：暗示论文中可有 Subgroup Analysis 章节。
-  - 变量映射：文件名与后续模块（如 09/10）路径吻合，闭环成功。
+
+* **产出**：
+* 生成 `mimic_for_model.csv`：机器学习管道的最终冷启动输入。
+* 生成 `table_1_pof_comparison.csv` 与 `table_2_renal_subgroup.csv`：直接用于论文撰写的统计母表。
+
+
+* **审计笔记**：
+* **学术严谨性**：在 Methods 中强调：“To ensure the model captures intrinsic biological risk rather than therapeutic intervention, we excluded all post-admission treatments and integrated clinical severity scores.”
+* **亚组逻辑**：为 Results 章节中的 Subgroup Analysis 埋下伏笔，证明模型在排除慢性干扰后的泛化力。
+* **闭环验证**：通过 `assert` 断言机制强制审计终点指标（Target Labels），确保特征精炼过程中的数据完整性。
+
+
 
 ## 第二阶段：算法开发与极致特征精炼 (Model Development & Feature Refinement)
 
-### 模块 03: 混合算法竞赛与多维评估 (Hybrid Model Training & Multi-dimensional Evaluation)
-- **核心内容**：
-  - 动态对数处理 (Skewness Correction)：针对偏态分布指标（如肌酐、淀粉酶、转氨酶）执行 `Log1p` 转换。
-  - 先进数据插补 (MICE)：采用多重插补技术，利用变量间链式关系填补缺失值。
-  - 特征降维 (LASSO Compression)：应用 LASSO 回归压缩至 Top 12 核心预测因子。
-  - 贝叶斯超参优化 (Optuna)：对 XGBoost 进行贝叶斯寻优。
-  - 概率校准 (Probability Calibration)：引入 `CalibratedClassifierCV`（Isotonic），优化 Brier Score。
-  - 多亚组性能评估：验证在“无预存肾损伤亚组”中的表现。
-- **产出**：引入 target 循环命名机制。逻辑更新： 由于 POF、死亡率、复合终点的核心驱动因子不同（如：死亡率受年龄影响大，而 POF 受乳酸和肌酐影响大），必须为每个结局生成独立的特征集和模型包。产出对齐： 保存为 all_models_{target}.pkl 和 selected_features_{target}.pkl。
-- **审计笔记**：
-  - 方法论亮点：LASSO + MICE + Optuna + Calibration 四组合拳是投稿加分项。
-  - 资产保存闭环：`skewed_cols.pkl` 和 `scaler.pkl` 供模块 08 使用。
-  - 亚组分析：在论文中可强调：“We developed target-specific predictive pipelines to capture the unique pathophysiological drivers of different clinical outcomes.”
+### **模块 03: 混合算法竞赛与多维评估 (Hybrid Model Training & Multi-dimensional Evaluation)**
+
+* **核心内容**：
+* **动态对数转换与物理分布审计 (Skewness Correction)**：
+* 针对肌酐、尿素氮、转氨酶等 16 项强偏态指标执行 `Log1p` 转换。
+* **双重审计**：代码在转换前后自动打印 Train/Test 组的中位数（Median），确保跨样本集的物理分布一致性，为线性模型（LR/SVM）提供高质量的数学收敛条件。
+
+
+* **增强型多重插补 (MICE) 与质量预警**：
+* 采用 `IterativeImputer` 链式方程补全缺失值。
+* **风险监控**：内置缺失率审计机制，对缺失率  的变量（如 Lipase, Bilirubin 等）自动发出“插补噪声”预警，提升数据治理的透明度。
+
+
+* **极致特征降维：LASSO 1-SE 准则 (Feature Compression)**：
+* **学术增强**：超越常规最小 MSE 准则，采用 **1-SE Rule（标准误准则）** 进行特征筛选。该逻辑在性能损失极小的范围内选择最精简的特征子集（Top 12），显著增强了模型的临床解释性与泛化能力。
+* **自动化制图**：代码可自动生成出版级 `Academic_Lasso_{target}.png`，展示系数路径与误差条。
+
+
+* **混合算法竞赛与多指标对齐 (Model Ensemble & Calibration)**：
+* **五大算法横跳**：同步训练 XGBoost、Random Forest、SVM、LR 及决策树。
+* **贝叶斯寻优**：通过 `Optuna` 对 XGBoost 进行 100 轮超参迭代，最大化 AUC。
+* **概率校准**：强制引入 `Isotonic` 校准器，确保预测概率与实际发生率线性对齐，优化临床决策关键指标——**Brier Score**。
+
+
+* **统计学强度支撑：Bootstrap CI 审计**：
+* 内置 1000 次 Bootstrap 抽样函数，为每个模型计算全人群及“无预存肾损伤亚组”的 **AUC 95% 置信区间**。
+
+
+
+
+* **产出**：
+* **独立资产包**：为每个研究终点（POF/Mortality/Composite）生成专属的 `all_models_{target}.pkl`、`selected_features_{target}.pkl` 及预处理资产。
+* **性能全景图**：自动化生成包含训练集/验证集的 **ROC 曲线** 与 **校准曲线（Calibration Curve）** 矩阵。
+* **性能汇总表**：生成 `all_outcomes_performance_summary.csv`，作为论文结果部分的数据源头。
+
+
+* **审计笔记**：
+* **叙事加分项**：在论文 Methods 中强调：“We utilized the LASSO 1-Standard Error (1-SE) rule to maintain model parsimony, ensuring that each outcome-specific model was built on the most predictive yet concise subset of clinical features.”
+* **多终点闭环**：该模块通过 Target 循环命名机制，解决了不同结局驱动因子（如年龄对死亡率的影响 vs. 肌酐对 POF 的影响）的异质性难题。
+* **亚组泛化**：Bootstrap 计算的亚组 AUC 为敏感性分析提供了严谨的统计学证据。
+
+
 
 ## 第三阶段：模型评价、可解释性与决策分析 (Evaluation & Interpretability)
 
-### 模块 04: 性能可视化与 SHAP 解释 (Visualization & Explainable AI)
 
-#### 核心内容
+### **模块 04: 模型评价、可解释性与决策分析 (Evaluation & Interpretability)**
 
-* **多结局鲁棒性审计 (Multi-target Robustness Validation)**：系统性评估模型在 `POF`、`Composite Outcome` 与 `Mortality` 三大终点下的表现。通过 `Main AUC` 与 `No-Renal Sub-AUC` 的双重对比，证明模型在排除肾功能干扰后依然具备强悍的泛化能力。
-* **黑盒模型透明化 (SHAP Explainable AI)**：以 **SVM（校准后版本）** 为核心审计对象。针对每个研究终点，利用 SHAP 蒙特卡洛采样将抽象的非线性向量转化为可直观理解的特征贡献度，解析不同并发症背景下的核心驱动因子。
-* **临床应用价值量化 (Decision Curve Analysis, DCA)**：超越单纯的数学指标，从临床获益角度出发，绘制 Net Benefit 曲线。通过动态流行率审计，确立模型在真实临床决策场景中的“优势区间（Benefit Window）”。
-* **出版级图表矩阵 (High-Resolution Graphic Matrix)**：自动化产出 300 DPI 高清图表。
+#### **核心内容**
+
+* **多结局鲁棒性审计 (Multi-target Performance Audit)**：
+* **区分度横向对比**：系统性加载模块 03 产出的 `all_models_{target}.pkl`。通过 ROC 曲线簇同步评估模型在 `POF`、`Composite Outcome` 与 `Mortality` 三大终点下的表现。
+* **亚组敏感性分析**：代码内置 `No-Renal AUC` 审计逻辑，对比全人群与“无预存肾损伤亚组”的 95% CI。若亚组表现稳定，则有力证明了模型捕捉的是 AP 的急性生理演变，而非受慢性病史驱动。
+
+
+* **黑盒模型透明化 (SHAP Explainable AI)**：
+* **SVM 核心审计**：代码选择非线性表达力最强的 **SVM（校准后版本）** 作为归因对象。通过 SHAP 蒙特卡洛采样，将高维非线性关系转化为直观的特征贡献度。
+* **动态缓存机制**：针对 SHAP 计算耗时长的特性，引入了 `svm_shap_values_{target}.pkl` 序列化缓存。当模型或特征更新时，系统可自主决定重算或加载，极大地优化了工程效率。
+* **特征交互视图**：生成 `Beeswarm Plot`，揭示核心预测因子（如乳酸、BUN、PaO2/FiO2）对风险概率的正负向影响强度。
+
+
+* **临床决策价值量化 (Decision Curve Analysis, DCA)**：
+* **净获益评价**：超越单纯的准确率指标，利用自定义 `calculate_net_benefit` 函数绘制 DCA 曲线。
+* **获益区间界定 (Benefit Window)**：自动化审计模型优于“全干预（Treat All）”或“不干预（Treat None）”的概率截断点。例如，自动输出“获益窗口: 5.0% - 75.0%”，为临床决策路径的构建提供定量支持。
+
+
+* **出版级图表矩阵 (Automated Visualization)**：
 * **Figure 1 (ROC)**：展示区分度与 95% CI。
-* **Figure 2 (SHAP)**：展示特征对风险的正负向影响。
-* **Figure 3 (DCA)**：展示临床净获益。
+* **Figure 2 (SHAP)**：展示生物学驱动因子。
+* **Figure 3 (DCA)**：展示临床实际应用价值。
+* **Table 2 (Summary)**：自动化生成 `Table2_Model_Performance_Summary.csv`，支持 `utf-8-sig` 编码以确保 Excel 兼容。
+
+
+
+#### **🎨 临床价值叙事 (Results Section Drafting)**
+
+> **区分度表现**：在针对持续性器官衰竭（POF）的预测中，校准后的 SVM 展现了卓越的区分能力，其验证集 AUC 为 **[X.XX, 95% CI: X.XX-X.XX]**。即便在排除慢性肾病干扰的亚组中，该模型依然保持了稳健的预测效能。
+> **驱动因子解析**：SHAP 摘要图（Figure 2）进一步具象化了临床逻辑：**乳酸（Lactate）**的显著升高与**氧合指数（PaO2/FiO2）**的下降是器官受累的最强先兆。
+> **决策支持区间**：DCA 获益区间审计（Figure 3）证实，对于大部分中高风险患者（阈值概率 10%-70%），基于本模型引导的早期预警策略能显著提升净获益。
+
+#### **🛠 技术细节修复与审计笔记**
+
+* **校准包装器桥接**：代码通过自定义 `svm_predict` 接口封装了 `predict_proba`，成功解决了 `CalibratedClassifierCV` 失去 `coef_` 属性后无法直接进行 SHAP 归因的行业痛点。
+* **数据一致性保障**：通过 `joblib` 循环加载特定结局的测试集 `test_data_main_{target}.pkl`，确保了“模型-特征-数据”的三位一体对齐。
+* **工程健壮性**：代码内置了完善的 `try-except` 异常捕获与 `numpy` 强制类型转换，有效规避了版本兼容性及 String-to-Float 的常见工程错误。
 
 ---
 
-#### 🎨 临床价值叙事 (Results Section Drafting)
+**[模块状态]**：模块 04 已完成对 MIMIC 数据的深度挖掘与成果可视化。
 
-基于模块 04 产出的 `Table2_Model_Performance_Summary.csv`，建议论文 Results 段落写作逻辑如下：
 
-> **性能总结 (Performance Summary)**：在针对 POF 及 28 天死亡率的预测中，机器学习模型展现了高度的区分度。以 **XGBoost** 为例，其在复合终点（Composite Outcome）中的测试集 AUC 达到了 **0.887 [95% CI: 0.839-0.932]**。值得注意的是，在非肾源性（No-Renal）亚组验证中，模型依然保持了极高的稳定性。
-> **临床决策获益 (Clinical Utility)**：决策曲线分析（DCA）进一步证实了模型的实用价值。对于 POF 预测，在 **3.0% 至 78.0%** 的风险阈值范围内，基于本研究模型的干预策略相比“全干预（Treat All）”展现了显著更高的净获益。
-> **特征驱动因子 (Feature Attribution)**：SHAP 摘要图（Figure 2）揭示了模型判定的逻辑：**乳酸（Lactate）**、**血尿素氮（BUN）**及**氧合指数（PaO2/FiO2）**是预测器官衰竭的关键变量。高水平的 BUN 与风险评分呈显著正相关，这与急性胰腺炎累及肾脏代谢的临床病理生理机制高度吻合。
-
----
-
-#### 🛠 技术细节修复与审计笔记
-
-* **校准包装器兼容性 (Calibration Bridge)**：针对模块 03 采用的 `CalibratedClassifierCV`（Isotonic/Sigmoid 校准），模块 04 采用自定义 `predict_proba` 映射函数，成功解决了校准模型失去 `coef_` 属性后无法进行 SHAP 归因的行业难题。
-* ** Table 2 自动化流水线**：代码实现了从 `.pkl` 模型包到 `Table2_Model_Performance_Summary.csv` 的全自动转化，支持自动填入 95% 置信区间与 DCA 获益窗口，确保了从代码到论文数据的数据一致性（Data Integrity）。
-* **计算性能优化 (Computational Efficiency)**：针对 SVM SHAP 计算耗时较长的特性，引入了基于 `Target` 命名的序列化缓存机制（Cache Logic）。当 `all_models_{target}.pkl` 更新时，系统可自主选择重算或加载缓存。
 
 ### 模块 05: 基线特征描述与单因素分析 (Baseline Characteristics & Univariate Analysis)
 - **核心内容**：
