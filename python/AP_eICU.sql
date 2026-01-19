@@ -116,6 +116,23 @@ WITH lab_filt AS (
             -- Platelets
             WHEN labname ILIKE '%platelet%' AND labresult BETWEEN 1 AND 1000 THEN labresult
 
+            -- 在 temp_lab_raw_all 的 CASE 结构中添加以下内容：
+
+            -- Anion Gap: 范围 5-50
+            WHEN labname ILIKE '%anion gap%' AND labresult BETWEEN 2 AND 50 THEN labresult
+
+            -- Bilirubin: 总胆红素 0.1-50 mg/dL
+            WHEN labname ILIKE '%total bilirubin%' AND labresult BETWEEN 0.1 AND 70 THEN labresult
+
+            -- Glucose: 10-1000 mg/dL
+            WHEN labname ILIKE '%glucose%' AND labresult BETWEEN 10 AND 2000 THEN labresult
+
+            -- ALP (碱性磷酸酶): 10-2000 U/L
+            WHEN labname ILIKE '%alkaline phos%' AND labresult BETWEEN 5 AND 2500 THEN labresult
+
+            -- Hemoglobin (血红蛋白): 3-25 g/dL
+            WHEN labname ILIKE '%hemoglobin%' AND labresult BETWEEN 2 AND 30 THEN labresult
+
             ELSE NULL 
         END AS labresult_clean
     FROM eicu_crd.lab
@@ -141,7 +158,13 @@ SELECT
     MIN(CASE WHEN labname ILIKE '%calcium%' AND labname NOT ILIKE '%ion%' THEN labresult_clean END) AS lab_calcium_min,
     MAX(CASE WHEN labname ILIKE '%AST%' THEN labresult_clean END) AS ast_max,
     MAX(CASE WHEN labname ILIKE '%ALT%' THEN labresult_clean END) AS alt_max,
-    MIN(CASE WHEN labname ILIKE '%platelet%' THEN labresult_clean END) AS platelet_min
+    MIN(CASE WHEN labname ILIKE '%platelet%' THEN labresult_clean END) AS platelet_min,
+    MAX(CASE WHEN labname ILIKE '%anion gap%' THEN labresult_clean END) AS aniongap_max,
+    MIN(CASE WHEN labname ILIKE '%anion gap%' THEN labresult_clean END) AS aniongap_min,
+    MAX(CASE WHEN labname ILIKE '%glucose%' THEN labresult_clean END) AS glucose_lab_max,
+    MIN(CASE WHEN labname ILIKE '%total bilirubin%' THEN labresult_clean END) AS bilirubin_total_min,
+    MAX(CASE WHEN labname ILIKE '%alkaline phos%' THEN labresult_clean END) AS alp_max,
+    MIN(CASE WHEN labname ILIKE '%hemoglobin%' THEN labresult_clean END) AS hemoglobin_min
 
 FROM lab_filt
 GROUP BY patientunitstayid;
@@ -172,6 +195,16 @@ WHERE chartoffset BETWEEN -360 AND 1440
   AND patientunitstayid IN (SELECT patientunitstayid FROM cohort_base)
 GROUP BY patientunitstayid;
 
+DROP TABLE IF EXISTS temp_pf_ratio;
+CREATE TEMP TABLE temp_pf_ratio AS
+SELECT 
+    patientunitstayid,
+    MIN(pao2 / (fio2 / 100.0)) AS pao2fio2ratio_min
+FROM eicu_derived.pivoted_bg
+WHERE fio2 >= 21 AND pao2 > 0
+  AND chartoffset BETWEEN -360 AND 1440
+GROUP BY patientunitstayid;
+
 --------------------------------------------------------------------------------
 -- 5. 提取生命体征 (Vitals) - 补全 Temperature
 --------------------------------------------------------------------------------
@@ -185,6 +218,7 @@ SELECT
     MIN(NULLIF(respiratoryrate, -1)) AS resp_rate_min,
     MIN(NULLIF(nibp_mean, -1)) AS mbp_min, 
     MAX(NULLIF(spo2, -1)) AS spo2_max,
+    MIN(NULLIF(spo2, -1)) AS spo2_min,
     -- 摄氏度转换逻辑：如果 > 50 (Fahrenheit), 转换为 Celsius
     MAX(CASE 
         WHEN temperature BETWEEN 80 AND 115 THEN (temperature - 32) * 5/9
@@ -201,6 +235,15 @@ WHERE chartoffset BETWEEN -360 AND 1440
   AND patientunitstayid IN (SELECT patientunitstayid FROM cohort_base)
 GROUP BY patientunitstayid;
 
+DROP TABLE IF EXISTS temp_comorbidity;
+CREATE TEMP TABLE temp_comorbidity AS
+SELECT 
+    patientunitstayid,
+    MAX(CASE WHEN diagnosisstring ILIKE '%malignant%' 
+               OR diagnosisstring ILIKE '%cancer%' 
+               OR diagnosisstring ILIKE '%metastas%' THEN 1 ELSE 0 END) AS malignant_tumor
+FROM eicu_crd.diagnosis
+GROUP BY patientunitstayid;
 --------------------------------------------------------------------------------
 -- 6. 增强版 POF 定义 (引入 CarePlan)
 --------------------------------------------------------------------------------
@@ -278,17 +321,16 @@ WHERE p.unitdischargestatus = 'Expired'
   AND p.unitdischargeoffset BETWEEN 1440 AND 2880
   AND p.patientunitstayid IN (SELECT patientunitstayid FROM cohort_base);
 --------------------------------------------------------------------------------
--- 7. 最终整合：严谨版 POF 判定与 28天死亡 + composite_events
+-- 7. 最终整合：严谨版 (已修正 JOIN 缺失和字段引用)
 --------------------------------------------------------------------------------
 DROP TABLE IF EXISTS eicu_cview.ap_external_validation;
 CREATE TABLE eicu_cview.ap_external_validation AS
 WITH base_final AS (
     SELECT
         c.*,
-        -- 修正点：引用 temp_apache_aps 中重命名后的字段
         COALESCE(l.creatinine_max, aps.apache_creatinine) AS creatinine_max,
         
-        -- pH 公式补全逻辑
+        -- pH 补全逻辑
         CASE 
             WHEN bg.bg_ph_min IS NOT NULL THEN bg.bg_ph_min
             WHEN l.lab_ph_direct IS NOT NULL THEN l.lab_ph_direct
@@ -298,28 +340,25 @@ WITH base_final AS (
             ELSE NULL
         END AS ph_min,
         
-        -- 其余生化指标
         COALESCE(l.bun_max, aps.apache_creatinine * 20) AS bun_max,
         COALESCE(l.bun_min, l.bun_max) AS bun_min,
         l.wbc_max, l.albumin_min, l.lactate_max,
         l.lab_calcium_min, l.ast_max, l.alt_max, l.platelet_min,
         
-        -- 生命体征
+        -- 新特征引用
+        l.aniongap_max, l.aniongap_min, l.glucose_lab_max, 
+        l.bilirubin_total_min, l.alp_max, l.hemoglobin_min,
+        COALESCE(pf.pao2fio2ratio_min, 400) AS pao2fio2ratio_min,
+        COALESCE(comb.malignant_tumor, 0) AS malignant_tumor,
+    
         v.heart_rate_max, v.heart_rate_min, v.resp_rate_max, v.resp_rate_min,
-        v.mbp_min, v.spo2_max, v.temp_max, v.temp_min,
+        v.mbp_min, v.spo2_max, v.spo2_min, v.temp_max, v.temp_min,
 
-        -- 干预逻辑汇总
         COALESCE(intv.vaso_flag, 0) AS raw_vaso,
         COALESCE(aps.apache_vent_flag, cp.vent_careplan_flag, intv.vent_treatment_flag, 0) AS raw_vent,
         COALESCE(intv.dialysis_flag, aps.apache_dialysis_flag, 0) AS dialysis_flag,
 
-        -- 判定 28 天死亡
-        CASE 
-            WHEN c.hosp_mort = 1 AND pat.hospitaldischargeoffset <= 40320 THEN 1 
-            ELSE 0 
-        END AS death_28d,
-        
-        -- 引入早期死亡标记
+        CASE WHEN c.hosp_mort = 1 AND pat.hospitaldischargeoffset <= 40320 THEN 1 ELSE 0 END AS death_28d,
         COALESCE(ed.early_death_24_48h, 0) AS early_death_24_48h
 
     FROM cohort_base c
@@ -331,40 +370,57 @@ WITH base_final AS (
     LEFT JOIN temp_interventions intv ON c.patientunitstayid = intv.patientunitstayid
     LEFT JOIN temp_vent_careplan cp ON c.patientunitstayid = cp.patientunitstayid
     LEFT JOIN temp_early_death ed ON c.patientunitstayid = ed.patientunitstayid
+    LEFT JOIN temp_pf_ratio pf ON c.patientunitstayid = pf.patientunitstayid -- 修正：添加 JOIN
+    LEFT JOIN temp_comorbidity comb ON c.patientunitstayid = comb.patientunitstayid -- 修正：添加 JOIN
 )
+
 SELECT
     *,
-    -- POF 判定矩阵
+    -- POF 判定矩阵 (基于修订版亚特兰大标准对齐)
     CASE 
+        -- 1. 循环系统：使用升压药
         WHEN raw_vaso = 1 AND icu_los_hours >= 24 THEN 1
-        WHEN raw_vent = 1 AND icu_los_hours >= 48 THEN 1
+        
+        -- 2. 呼吸系统：插管超过48h OR PF比值持续低位
+        -- (由于外部验证通常取24h内最差值，这里增加 PF < 300 判定)
+        WHEN (raw_vent = 1 AND icu_los_hours >= 48) 
+          OR (pao2fio2ratio_min < 300 AND icu_los_hours >= 48) THEN 1
+        
+        -- 3. 肾脏系统：透析 OR 肌酐 > 1.9 mg/dL (171 umol/L)
         WHEN dialysis_flag = 1 OR creatinine_max > 1.9 THEN 1
+        
+        -- 4. 排除早期死亡：根据你的研究设计，排除 24-48h 内死亡的非 POF 病例
+        -- (如果 early_death_24_48h = 1 且以上均不满足，则为 0)
         ELSE 0 
     END AS pof,
     
-    -- composite outcome: POF 或 28天死亡
+    -- Composite Outcome: POF 或 28天内死亡
     CASE 
         WHEN (raw_vaso = 1 AND icu_los_hours >= 24)
           OR (raw_vent = 1 AND icu_los_hours >= 48)
+          OR (pao2fio2ratio_min < 300 AND icu_los_hours >= 48)
           OR dialysis_flag = 1
           OR creatinine_max > 1.9
-          OR death_28d = 1  -- 改为引用 base_final 的列
+          OR death_28d = 1 
         THEN 1
         ELSE 0
     END AS composite_events
 FROM base_final;
 
 --------------------------------------------------------------------------------
--- 最终统计信息（对齐 MIMIC 风格）
+-- 最终统计信息（增强版：监控新打捞特征的质量）
 --------------------------------------------------------------------------------
 SELECT 
     COUNT(*) AS total_count,
-    COUNT(DISTINCT uniquepid) AS unique_patients,
     SUM(pof) AS pof_count,
+    ROUND(SUM(pof)::numeric / COUNT(*) * 100, 2) AS pof_rate_pct,
     SUM(death_28d) AS deaths_28d,
-    SUM(early_death_24_48h) AS early_deaths,
     SUM(composite_events) AS composite_events,
-    ROUND(COUNT(ph_min)::numeric / COUNT(*) * 100, 2) AS ph_data_coverage_pct,
-    ROUND(COUNT(creatinine_max)::numeric / COUNT(*) * 100, 2) AS creatinine_coverage_pct,
-    ROUND(COUNT(bmi)::numeric / COUNT(*) * 100, 2) AS bmi_fill_rate
+    
+    -- 数据质量审计 (对齐模块 07 的审计需求)
+    ROUND(COUNT(ph_min)::numeric / COUNT(*) * 100, 2) AS ph_coverage,
+    ROUND(COUNT(pao2fio2ratio_min)::numeric / COUNT(*) * 100, 2) AS pf_ratio_coverage,
+    ROUND(COUNT(aniongap_max)::numeric / COUNT(*) * 100, 2) AS ag_coverage,
+    ROUND(COUNT(lactate_max)::numeric / COUNT(*) * 100, 2) AS lactate_coverage,
+    ROUND(COUNT(alp_max)::numeric / COUNT(*) * 100, 2) AS alp_coverage
 FROM eicu_cview.ap_external_validation;
