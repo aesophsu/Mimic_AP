@@ -3,8 +3,6 @@ import pandas as pd
 import numpy as np
 import joblib
 import optuna
-
-# 机器学习核心库
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.experimental import enable_iterative_imputer
@@ -19,8 +17,10 @@ from sklearn.metrics import roc_auc_score, brier_score_loss
 import matplotlib.pyplot as plt
 from sklearn.linear_model import Lasso
 from sklearn.metrics import roc_curve, roc_auc_score, brier_score_loss
-from sklearn.calibration import calibration_curve # 将它从 calibration 模块导入# 屏蔽警告
-from sklearn.utils import resample # 确保在顶部或此处导入
+from sklearn.calibration import calibration_curve
+from sklearn.utils import resample
+from tqdm import tqdm
+from sklearn.linear_model import lasso_path
 import warnings
 warnings.filterwarnings('ignore')
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -190,10 +190,10 @@ def train_pipeline(target):
     idx_min = np.argmin(mse_mean)
     target_mse = mse_mean[idx_min] + mse_se[idx_min]
     # 1-SE 点：在 idx_min 之后（更简单的模型中）寻找最后一个满足 MSE <= target_mse 的索引
-    idx_1se = np.where(mse_mean <= target_mse)[0][0] 
+    idx_1se = np.where(mse_mean <= target_mse)[0][-1] 
 
     # 获取特征路径用于顶部计数
-    from sklearn.linear_model import lasso_path
+
     _, coefs_path, _ = lasso_path(X_train_std, y_train, alphas=alphas)
     active_counts = np.sum(coefs_path != 0, axis=0)
 
@@ -302,13 +302,10 @@ def train_pipeline(target):
     # =========================================================
     # 7.1 统计学增强：Bootstrap 计算 95% CI (全人群 + 亚组)
     # =========================================================
-    from sklearn.utils import resample
-
     def get_auc_ci(model, X_test_data, y_test_data, n_bootstraps=1000):
         """通用的 Bootstrap AUC 置信区间计算函数"""
         bootstrapped_scores = []
         for i in range(n_bootstraps):
-            # 使用 i 作为随机种子，确保结果可复现且每次采样不同
             X_res, y_res = resample(X_test_data, y_test_data, random_state=i)
             if len(np.unique(y_res)) < 2: 
                 continue
@@ -325,25 +322,49 @@ def train_pipeline(target):
     print("\n" + "="*110)
     print(f"{'Algorithm':<20} | {'Main AUC (95% CI)':<30} | {'No-Renal AUC (95% CI)':<30} | {'Brier':<8}")
     print("-" * 110)
-
+    
+    current_outcome_summary = [] 
+    ci_audit_data = {}
+    sub_ci_audit_data = {}
     for name, clf in calibrated_results.items():
-        # --- 1. 全人群指标 ---
+        ci_low_m, ci_high_m = get_auc_ci(clf, X_test_final, y_test)
+        ci_low_s, ci_high_s = get_auc_ci(clf, X_test_sub, y_test_sub)
         y_prob = clf.predict_proba(X_test_final)[:, 1]
         auc_main = roc_auc_score(y_test, y_prob)
-        brier = brier_score_loss(y_test, y_prob)
-        ci_low_m, ci_high_m = get_auc_ci(clf, X_test_final, y_test)
+        brier = brier_score_loss(y_test, y_prob) 
+        y_prob_sub = clf.predict_proba(X_test_sub)[:, 1]
+        auc_sub = roc_auc_score(y_test_sub, y_prob_sub)
         main_auc_str = f"{auc_main:.3f} ({ci_low_m:.3f}-{ci_high_m:.3f})"
-        
-        # --- 2. 亚组 (No-Renal) 指标 ---
-        # 使用预先准备好的 sub_mask 提取亚组数据
-        ci_low_s, ci_high_s = get_auc_ci(clf, X_test_sub, y_test_sub)
-        auc_sub = roc_auc_score(y_test_sub, clf.predict_proba(X_test_sub)[:, 1])
         sub_auc_str = f"{auc_sub:.3f} ({ci_low_s:.3f}-{ci_high_s:.3f})"
-        
-        # --- 3. 打印格式化结果 ---
         print(f"{name:<20} | {main_auc_str:<30} | {sub_auc_str:<30} | {brier:.4f}")
+        ci_audit_data[name] = main_auc_str
+        sub_ci_audit_data[name] = sub_auc_str
+        current_outcome_summary.append({
+            "Outcome": target,
+            "Algorithm": name,
+            "Main AUC": round(auc_main, 4),
+            "Main AUC (95% CI)": main_auc_str,
+            "No-Renal AUC": round(auc_sub, 4),
+            "No-Renal AUC (95% CI)": sub_auc_str,
+            "Brier Score": round(brier, 4)
+        })
     print("="*110)
 
+    # 保存模型字典
+    joblib.dump(calibrated_results, os.path.join(SAVE_DIR, f"all_models_{target}.pkl")) 
+    joblib.dump(ci_audit_data, os.path.join(SAVE_DIR, f"ci_main_{target}.pkl"))
+    joblib.dump(sub_ci_audit_data, os.path.join(SAVE_DIR, f"ci_sub_{target}.pkl"))
+    joblib.dump(selected_features, os.path.join(SAVE_DIR, f"selected_features_{target}.pkl"))
+    train_assets = {
+        'medians': X_train.median().to_dict(),
+        'skewed_cols': existing_skewed,
+        'selected_features': selected_features
+    }
+    assets_save_path = os.path.join(SAVE_DIR, f"train_assets_{target}.pkl")
+    joblib.dump(train_assets, assets_save_path)
+    X_test_final_df = pd.DataFrame(X_test_final, columns=selected_features)
+    joblib.dump((X_test_final_df, y_test), os.path.join(SAVE_DIR, f"test_data_main_{target}.pkl"))
+    joblib.dump((X_test_sub, y_test_sub), os.path.join(SAVE_DIR, f"test_data_sub_{target}.pkl"))
     # =========================================================
     # 7.2 性能对比绘图 (单图单文件保存)
     # =========================================================
@@ -388,95 +409,9 @@ def train_pipeline(target):
         plt.show()
         plt.close()
         
-
-    # --- 最终执行：生成 4 张独立图片 ---
     print("\n📊 正在生成 4 张独立的论文插图 (ROC & Calibration for Train/Val)...")
-    # 验证集图 (对应你终端输出的 0.83 左右)
     save_final_plots((X_test_final, y_test), "Validation Group", "Validation")
-    # 训练集图 (对应你看到的 0.90 左右)
     save_final_plots((X_train_final, y_train), "Training Group", "Training")
-    # =========================================================
-    # 8. 全资产保存 (确保每个 Outcome 独立保存)
-    # =========================================================
-    # 保存模型字典
-    joblib.dump(calibrated_results, os.path.join(SAVE_DIR, f"all_models_{target}.pkl"))
-    # --- [新增] 自动保存置信区间 (CI) 审计数据 ---
-    ci_audit_data = {}
-    sub_ci_audit_data = {}
-
-    for name, clf in calibrated_results.items():
-        # 1. 计算全人群 CI
-        ci_low_m, ci_high_m = get_auc_ci(clf, X_test_final, y_test)
-        auc_main = roc_auc_score(y_test, clf.predict_proba(X_test_final)[:, 1])
-        ci_audit_data[name] = f"{auc_main:.3f} ({ci_low_m:.3f}-{ci_high_m:.3f})"
-        
-        # 2. 计算亚组 CI
-        ci_low_s, ci_high_s = get_auc_ci(clf, X_test_sub, y_test_sub)
-        auc_sub = roc_auc_score(y_test_sub, clf.predict_proba(X_test_sub)[:, 1])
-        sub_ci_audit_data[name] = f"{auc_sub:.3f} ({ci_low_s:.3f}-{ci_high_s:.3f})"
-
-    # 保存 CI 字典，供模块 04 直接调用
-    joblib.dump(ci_audit_data, os.path.join(SAVE_DIR, f"ci_main_{target}.pkl"))
-    joblib.dump(sub_ci_audit_data, os.path.join(SAVE_DIR, f"ci_sub_{target}.pkl"))
-    print(f"📊 {target} 的置信区间数据已自动同步至本地文件。")
-    # 保存该结局筛选出的 Top 12 特征名
-    joblib.dump(selected_features, os.path.join(SAVE_DIR, f"selected_features_{target}.pkl"))
-    
-    # 保存测试集数据，方便后续离线做 SHAP 或其他分析
-    X_test_final_df = pd.DataFrame(X_test_final, columns=selected_features)
-    joblib.dump((X_test_final_df, y_test), os.path.join(SAVE_DIR, f"test_data_main_{target}.pkl"))
-    joblib.dump((X_test_sub, y_test_sub), os.path.join(SAVE_DIR, f"test_data_sub_{target}.pkl"))
-
-    # =========================================================
-    # 9. 构建最终性能汇总报表
-    # =========================================================
-    current_outcome_summary = [] # 使用更明确的变量名
-    
-    for name, clf in calibrated_results.items():
-        # 执行 Bootstrap 计算全人群和亚组的 95% CI
-        ci_low_m, ci_high_m = get_auc_ci(clf, X_test_final, y_test)
-        ci_low_s, ci_high_s = get_auc_ci(clf, X_test_sub, y_test_sub)
-        
-        # 计算全人群指标
-        y_prob = clf.predict_proba(X_test_final)[:, 1]
-        auc_main = roc_auc_score(y_test, y_prob)
-        brier = brier_score_loss(y_test, y_prob)
-        
-        # 计算亚组 (No-Renal) 指标
-        y_prob_sub = clf.predict_proba(X_test_sub)[:, 1]
-        auc_sub = roc_auc_score(y_test_sub, y_prob_sub)
-
-        # 整理成字典，添加进列表
-        current_outcome_summary.append({
-            "Outcome": target,
-            "Algorithm": name,
-            "Main AUC": round(auc_main, 4),
-            "Main AUC (95% CI)": f"{auc_main:.3f} ({ci_low_m:.3f}-{ci_high_m:.3f})",
-            "No-Renal AUC": round(auc_sub, 4),
-            "No-Renal AUC (95% CI)": f"{auc_sub:.3f} ({ci_low_s:.3f}-{ci_high_s:.3f})",
-            "Brier Score": round(brier, 4)
-        })
-
-    print("-" * 60)
-    print(f"✅ 结局 {target.upper()} 分析及资产保存成功！")
-    
-
-    train_assets = {
-        'medians': X_train.median().to_dict(), # 该结局对应的训练集中位数
-        'skewed_cols': existing_skewed,        # 偏态处理列表
-        'selected_features': selected_features # 该结局筛选出的 Top 12
-    }
-    
-    # 文件名带上 target 后缀，如 train_assets_pof.pkl
-    assets_save_path = os.path.join(SAVE_DIR, f"train_assets_{target}.pkl")
-    joblib.dump(train_assets, assets_save_path)
-
-    # 同步保存一份专属特征清单，方便其他模块调用
-    joblib.dump(selected_features, os.path.join(SAVE_DIR, f"selected_features_{target}.pkl"))
-
-    print(f"📦 [资产同步] 专属基准已存至: {assets_save_path}")
-    print(f"📦 [特征同步] 专属特征清单已存至: selected_features_{target}.pkl")
-        
     return current_outcome_summary
 
 if __name__ == "__main__":
