@@ -4,19 +4,38 @@
 ### 📂 研究流程：SQL 层面的深度对齐 (Cross-database SQL Engineering)
 
 #### **第零阶段：数据仓库挖掘与队列构建 (SQL Data Mining)**
-*这是研究的基石，通过结构化查询语言直接在 MIMIC-IV 数据库中定义临床实体。*
 
-* **模块 00-A: 自动化队列提取与结局定义 (SQL Implementation)**
-  - **核心内容**：
-    - 疾病识别 (AP Diagnosis)：利用 ICD-9（5770）和 ICD-10（K85）代码精准识别 AP 患者。
-    - POF 结局标签构建 (POF Gold Standard)：
-      - **逻辑**：基于修正的 Marshall 评分标准，提取 ICU 入院 24 小时后至 7 天内的 **SOFA 评分**。
-      - **判定**：通过 SQL 实现“持续性”判定，即呼吸、循环或肾脏系统中任意一个系统的 SOFA 分数 且持续时间 小时。
-    - 多维数据整合：从 `chartevents`（生命体征）、`labevents`（生化指标）和 `derived`（派生表）中横向集成入院 24 小时内的临床全貌。
-  - **产出**：生成结构化母表 `ap_final_analysis_cohort`。
-  - **审计笔记**：
-    - 这模块奠定了队列的临床准确性。在论文 Methods 中可强调：“We employed SQL-based cohort extraction to ensure precise identification of AP subtypes and POF outcomes, minimizing selection bias.”
-    - 与后续模块衔接：生成的母表直接喂入模块 01 的清洗流程，确保数据从源头到建模的连续性。
+### 模块 00-A: 自动化队列提取与结局定义 (SQL Implementation)
+
+#### **核心内容**
+
+* **多维队列精炼 (Multi-stage Cohort Refinement)**：
+* **疾病识别**：利用 ICD-9 (5770) 与 ICD-10 (K85.x) 代码精准定位急性胰腺炎 (AP) 患者。
+* **偏倚控制**：仅纳入首次 ICU 入院 (`stay_seq = 1`) 且住院时长  小时 (`los >= 1`) 的成年患者，排除因短期观察或复发入院导致的统计偏倚。
+* **全局身高回填**：利用 `PERCENTILE_CONT(0.5)` 中位数逻辑打捞患者全病历身高质量数据，有效解决 BMI 计算中原始身高缺失率高的工程难题。
+
+
+* **POF 结局标签构建与竞争风险审计 (POF & Competitive Risk)**：
+* **持续性判定**：基于修正的 Marshall 评分逻辑，提取 ICU 入院 24h 至 7d 内的每日最高 SOFA 评分。通过 SQL 的 `FILTER` 聚合实现“持续性”判定，即呼吸、循环或肾脏分系统评分  且持续至少 2 个采样日（模拟  小时逻辑）。
+* **早期死亡审计**：针对 ICU 入院 24-48h 内发生的早期死亡 (`early_death_24_48h`) 进行独立标记。该逻辑作为竞争风险审计，确保无法观测到 48h 持续性评分的极端危重患者被正确纳入 `composite_outcome`。
+
+
+* **时序趋势特征提取 (Temporal Trend Extraction)**：
+* **动态斜率 (Slopes)**：超越传统的静态极值，通过 SQL 计算入院 24h 内乳酸 (`lactate`)、血糖 (`glucose`) 及血氧 (`spo2`) 的变化斜率。
+* **质量触发阈值**：严格设定“采样点  且时间间隔  小时”的计算条件，确保斜率特征具备生物学意义，抑制传感器噪声。
+
+
+
+#### **产出**
+
+* 生成结构化分析母表 `ap_final_analysis_cohort`，包含结局指标、动态趋势指标、合并症、干预措施及基线生理全景数据。
+
+#### **审计笔记**
+
+* **方法论深度**：在论文 Methods 中可强调：“To capture the dynamic evolution of AP, we integrated temporal trend features (slopes) and implemented a rigorous 48-hour persistent organ failure definition, accounting for early-death competitive risks to ensure the robustness of the primary endpoint.”
+* **数据填充率保障**：SQL 脚本中内置了 `COALESCE` 与 `LEFT JOIN` 级联打捞机制（如 LAR、TBAR 等比值计算），确保了机器学习核心预测子的高填充率（Fill-rate），为模块 03 的 MICE 插补提供了高质量的冷启动数据。
+
+
 
 #### **模块 00-B: eICU 多中心数据特征审计与对齐 (SQL Level)**
   - **核心内容**：
