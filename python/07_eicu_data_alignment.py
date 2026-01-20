@@ -51,7 +51,38 @@ def run_module_07(target='pof'):
         df['pao2fio2ratio_min'] = df['pao2fio2ratio_min'].fillna(400)
         print("ℹ️ 已将 pao2fio2ratio_min 缺失值填充为 400")
 
-    # 4. 特征缺失率审计
+    # 4. 跨数据库特征值对齐审计 (逻辑修正核心)
+    print(f"\n📊 [1/4] 跨数据库特征中值对比 (MIMIC vs eICU):")
+    alignment_audit = []
+    
+    for feat in selected_features:
+        if feat in df.columns:
+            m_med = mimic_medians.get(feat, np.nan)
+            e_med = df[feat].median()
+            
+            # 计算偏差比例
+            ratio = e_med / m_med if m_med != 0 and not pd.isna(m_med) else 1.0
+            
+            # 标记潜在的单位错误 (例如肌酐 mg/dL vs umol/L 会差 88倍)
+            if ratio > 5 or ratio < 0.2:
+                status = "🚩 严重偏差 (检单位!)"
+            elif ratio > 1.5 or ratio < 0.6:
+                status = "⚠️ 偏移较大"
+            else:
+                status = "✅ 正常"
+                
+            alignment_audit.append({
+                'Feature': feat,
+                'MIMIC_Med': round(m_med, 3),
+                'eICU_Med': round(e_med, 3),
+                'Ratio': round(ratio, 2),
+                'Status': status
+            })
+    
+    audit_df = pd.DataFrame(alignment_audit)
+    print(audit_df.to_string(index=False))
+
+    # 5. 特征缺失率审计
     print(f"\n🔍 [1/3] 特征审计: {target}")
     audit_data = []
     for feat in selected_features:
@@ -64,7 +95,7 @@ def run_module_07(target='pof'):
         audit_data.append({'Feature': feat, 'Missing%': f"{missing:.2f}%", 'Status': status})
     print(pd.DataFrame(audit_data).sort_values('Missing%').to_string(index=False))
 
-    # 5. 执行数据变换 (Log1p + Clipping)
+    # 6. 执行数据变换 (Log1p + Clipping)
     print(f"\n🧪 [2/3] 应用数据变换与生理剪裁...")
     
     # 【同步更新】pH 值的生理限度裁剪，与 SQL 逻辑保持一致
@@ -78,7 +109,7 @@ def run_module_07(target='pof'):
         if col in df.columns and col != 'ph_min': # pH 绝不进行 log
             df[col] = np.log1p(df[col].astype(float).clip(lower=0))
     
-    # 6. 构建最终矩阵
+    # 7. 构建最终矩阵
     print("\n🛠️ [3/3] 构建验证矩阵并填充剩余缺失值...")
     X_eicu = pd.DataFrame(index=df.index)
     for feat in selected_features:
