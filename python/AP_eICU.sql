@@ -47,7 +47,7 @@ WHERE r.stay_rank = 1
             ELSE 0 END) >= 18;
 
 --------------------------------------------------------------------------------
--- 3. 深度打捞实验室指标 (已修复重复列名错误)
+-- 3. 深度打捞实验室指标 (更新：修正 Hgb, 增强 Lactate/PTT/pH)
 --------------------------------------------------------------------------------
 DROP TABLE IF EXISTS temp_lab_raw_all;
 CREATE TEMP TABLE temp_lab_raw_all AS
@@ -55,21 +55,39 @@ WITH lab_filt AS (
     SELECT 
         patientunitstayid, labname, labresult,
         CASE 
-            -- 生理性 pH 严格限制：6.7 - 7.8 (临床极限)，且排除 7.0/8.0 等可能的占位符
-            WHEN labname ILIKE '%pH%' AND labname NOT ILIKE '%urine%' AND labname NOT ILIKE '%fluid%'
+            -- 1. BUN 单位转换补丁 (mg/dL -> mmol/L)
+            WHEN labname ILIKE '%BUN%' AND labresult BETWEEN 1 AND 200 
+                 THEN labresult / 2.801
+            
+            -- 2. Creatinine 单位转换补丁 (umol/L -> mg/dL)
+            WHEN labname ILIKE '%creatinine%' THEN 
+                CASE WHEN labresult > 30 THEN labresult / 88.4 
+                     WHEN labresult BETWEEN 0.1 AND 30 THEN labresult ELSE NULL END
+
+            -- 3. Hemoglobin 修正与打捞 (g/dL)
+            WHEN labname ILIKE ANY(ARRAY['%hemoglobin%', '%Hgb%', '%total hemoglobin%']) 
+                 AND labname NOT ILIKE '%A1c%' 
+                 AND labresult BETWEEN 4 AND 25 THEN labresult 
+            WHEN labname ILIKE '%Hct%' AND labresult BETWEEN 12 AND 75 THEN labresult / 3.0
+
+            -- 4. pH 生理性过滤
+            WHEN labname ILIKE ANY(ARRAY['%pH%', '%arterial pH%']) AND labname NOT ILIKE ANY(ARRAY['%urine%','%fluid%'])
                  AND labresult BETWEEN 6.7 AND 7.8 AND labresult NOT IN (7.0, 8.0) THEN labresult
             
-            -- 其他指标限制 (保持不变)
+            -- 5. PTT 打捞 (放宽命名匹配)
+            WHEN labname ILIKE ANY(ARRAY['%PTT%', '%Partial Thromboplastin Time%', '%aPTT%']) 
+                 AND labresult BETWEEN 10 AND 150 THEN labresult
+
+            -- 6. 乳酸打捞
+            WHEN labname ILIKE ANY(ARRAY['%lactate%', '%lactic acid%', '%lac%']) 
+                 AND labresult BETWEEN 0.1 AND 30 THEN labresult
+
+            -- 7. 其他常规指标 (保持原样)
             WHEN labname ILIKE '%paCO2%' AND labresult BETWEEN 5 AND 150 THEN labresult
             WHEN (labname ILIKE '%bicarb%' OR labname ILIKE '%HCO3%') AND labname NOT ILIKE '%total co2%'
                  AND labresult BETWEEN 2 AND 60 THEN labresult
-            WHEN labname ILIKE '%creatinine%' THEN 
-                CASE WHEN labresult > 30 THEN labresult / 88.4 WHEN labresult BETWEEN 0.1 AND 30 THEN labresult ELSE NULL END
-            WHEN labname ILIKE '%BUN%' AND labresult BETWEEN 1 AND 200 THEN labresult
             WHEN labname ILIKE '%WBC%' AND labresult BETWEEN 0.1 AND 500 THEN labresult
             WHEN labname ILIKE '%albumin%' AND labresult BETWEEN 1.0 AND 6.0 THEN labresult
-            WHEN labname ILIKE '%lactate%' AND labresult BETWEEN 0.1 AND 30 THEN labresult
-            WHEN labname ILIKE '%PTT%' AND labresult BETWEEN 10 AND 150 THEN labresult
             WHEN labname ILIKE '%calcium%' AND labname NOT ILIKE '%ion%' AND labresult BETWEEN 4 AND 15 THEN labresult
             WHEN labname ILIKE '%AST%' AND labresult BETWEEN 1 AND 2000 THEN labresult
             WHEN labname ILIKE '%ALT%' AND labresult BETWEEN 1 AND 2000 THEN labresult
@@ -78,11 +96,10 @@ WITH lab_filt AS (
             WHEN labname ILIKE '%total bilirubin%' AND labresult BETWEEN 0.1 AND 70 THEN labresult
             WHEN labname ILIKE '%glucose%' AND labresult BETWEEN 10 AND 2000 THEN labresult
             WHEN labname ILIKE '%alkaline phos%' AND labresult BETWEEN 5 AND 2500 THEN labresult
-            WHEN labname ILIKE '%hemoglobin%' AND labresult BETWEEN 2 AND 30 THEN labresult
             ELSE NULL 
         END AS labresult_clean
     FROM eicu_crd.lab
-    WHERE labresultoffset BETWEEN -360 AND 1440 
+    WHERE labresultoffset BETWEEN -1440 AND 1440 
       AND labresult IS NOT NULL
       AND patientunitstayid IN (SELECT patientunitstayid FROM cohort_base)
 )
@@ -110,18 +127,17 @@ SELECT
     MAX(CASE WHEN labname ILIKE '%glucose%' THEN labresult_clean END) AS glucose_lab_max,
     MIN(CASE WHEN labname ILIKE '%total bilirubin%' THEN labresult_clean END) AS bilirubin_total_min,
     MAX(CASE WHEN labname ILIKE '%alkaline phos%' THEN labresult_clean END) AS alp_max,
-    MIN(CASE WHEN labname ILIKE '%hemoglobin%' THEN labresult_clean END) AS hemoglobin_min,
-    MIN(CASE WHEN labname ILIKE '%PTT%' THEN labresult_clean END) AS ptt_min
+    MIN(CASE WHEN labname ILIKE ANY(ARRAY['%hemoglobin%', '%Hgb%', '%Hct%']) THEN labresult_clean END) AS hemoglobin_min,
+    MIN(CASE WHEN labname ILIKE ANY(ARRAY['%PTT%', '%aPTT%']) THEN labresult_clean END) AS ptt_min
 FROM lab_filt
 GROUP BY patientunitstayid;
 
 --------------------------------------------------------------------------------
--- 4 & 5. 血气、生命体征、合并症 (逻辑合并以节省空间)
+-- 4. 血气增强打捞 (增加乳酸)
 --------------------------------------------------------------------------------
 DROP TABLE IF EXISTS temp_bg;
 CREATE TEMP TABLE temp_bg AS
 SELECT patientunitstayid, 
-    -- 这里的 pH 同样遵循 6.7-7.8 的物理极限
     MIN(CASE WHEN ph BETWEEN 6.7 AND 7.8 AND ph NOT IN (7, 8) THEN ph END) AS bg_ph_min,
     MAX(CASE WHEN ph BETWEEN 6.7 AND 7.8 AND ph NOT IN (7, 8) THEN ph END) AS bg_ph_max,
     AVG(CASE WHEN paco2 BETWEEN 5 AND 150 THEN paco2 END) AS bg_paco2
@@ -176,8 +192,9 @@ CREATE TEMP TABLE temp_early_death AS
 SELECT patientunitstayid, 1 AS early_death_24_48h FROM eicu_crd.patient 
 WHERE unitdischargestatus = 'Expired' AND unitdischargeoffset BETWEEN 1440 AND 2880;
 
+
 --------------------------------------------------------------------------------
--- 7. 最终整合：严谨版 (对齐结局字段名)
+-- 7. 最终整合：整合补丁
 --------------------------------------------------------------------------------
 DROP TABLE IF EXISTS eicu_cview.ap_external_validation;
 CREATE TABLE eicu_cview.ap_external_validation AS
@@ -186,26 +203,27 @@ WITH tier_calc AS (
         c.patientunitstayid, c.age AS admission_age, c.gender, c.bmi, c.icu_los_hours,
         COALESCE(l.creatinine_max, aps.apache_creatinine) AS creatinine_max,
         
-        -- 罗列四级 pH 来源（暂不合并，留待下一步加锁过滤）
-        bg.bg_ph_min AS ph_t1, -- Tier 1: 血气
-        l.lab_ph_direct AS ph_t2, -- Tier 2: 实验室直接记录
+        -- pH 打捞链
+        bg.bg_ph_min AS ph_t1, 
+        l.lab_ph_direct AS ph_t2, 
         CASE 
             WHEN l.lab_hco3 > 0 AND COALESCE(bg.bg_paco2, l.lab_paco2) > 0 
             THEN (6.1 + LOG10(l.lab_hco3 / (0.0301 * COALESCE(bg.bg_paco2, l.lab_paco2)))) 
             ELSE NULL 
-        END AS ph_t3, -- Tier 3: Henderson-Hasselbalch 公式计算
-        aps.apache_ph AS ph_t4, -- Tier 4: APACHE APS 预存值
+        END AS ph_t3, 
+        aps.apache_ph AS ph_t4, 
         
-        -- ph_max 的原始合并值
         COALESCE(bg.bg_ph_max, l.lab_ph_max, bg.bg_ph_min, l.lab_ph_direct) AS ph_max_raw,
 
-        -- 实验室指标
+        -- 实验室指标联合打捞
+        l.lactate_max AS lactate_max,
         COALESCE(l.bun_max, aps.apache_creatinine * 20) AS bun_max,
         COALESCE(l.bun_min, l.bun_max) AS bun_min,
         l.wbc_max, l.wbc_min, l.ptt_min, l.albumin_min,
         COALESCE(l.albumin_max, l.albumin_min) AS albumin_max,
-        l.bicarbonate_min, l.lactate_max, l.lab_calcium_min, l.ast_max, l.alt_max, l.platelet_min,
-        l.aniongap_max, l.aniongap_min, l.glucose_lab_max, l.bilirubin_total_min, l.alp_max, l.hemoglobin_min,
+        l.bicarbonate_min, l.lab_calcium_min, l.ast_max, l.alt_max, l.platelet_min,
+        l.aniongap_max, l.aniongap_min, l.glucose_lab_max, l.bilirubin_total_min, l.alp_max, 
+        l.hemoglobin_min, -- 此时已是修正后的 hemoglobin
         pf.pao2fio2ratio_min,
         COALESCE(comb.malignant_tumor, 0) AS malignant_tumor,
         v.heart_rate_max, v.heart_rate_min, v.resp_rate_max, v.resp_rate_min,
@@ -257,21 +275,49 @@ SELECT *,
 FROM base_final;
 
 --------------------------------------------------------------------------------
--- 最终统计信息
+-- 最终统计信息 (加强版：覆盖率 + 生理分布审计)
 --------------------------------------------------------------------------------
 SELECT 
-    COUNT(*) AS total_count,
-    SUM(pof) AS pof_count,
-    ROUND(SUM(pof)::numeric / COUNT(*) * 100, 2) AS pof_rate_pct,
+    -- 1. 总体样本与结局分布
+    COUNT(*) AS total_pts,
+    SUM(pof) AS pof_cases,
+    ROUND(AVG(pof)*100, 2) AS pof_rate_pct,
     SUM(mortality_28d) AS deaths_28d,
+    ROUND(AVG(mortality_28d)*100, 2) AS mort_rate_pct,
     SUM(composite_outcome) AS composite_events,
-    
-    -- 数据质量审计
-    MIN(ph_min) as ph_min_check, -- 验证最小值是否 >= 6.7
-    MAX(ph_min) as ph_max_check, -- 验证最大值是否 <= 7.8
+
+    -- 2. 核心打捞特征覆盖率审计 (Missing% 的反面)
     ROUND(COUNT(ph_min)::numeric / COUNT(*) * 100, 2) AS ph_coverage,
-    ROUND(COUNT(pao2fio2ratio_min)::numeric / COUNT(*) * 100, 2) AS pf_ratio_coverage,
-    ROUND(COUNT(aniongap_max)::numeric / COUNT(*) * 100, 2) AS ag_coverage,
-    ROUND(COUNT(lactate_max)::numeric / COUNT(*) * 100, 2) AS lactate_coverage,
-    ROUND(COUNT(alp_max)::numeric / COUNT(*) * 100, 2) AS alp_coverage
+    ROUND(COUNT(lactate_max)::numeric / COUNT(*) * 100, 2) AS lac_coverage,
+    ROUND(COUNT(hemoglobin_min)::numeric / COUNT(*) * 100, 2) AS hgb_coverage,
+    ROUND(COUNT(ptt_min)::numeric / COUNT(*) * 100, 2) AS ptt_coverage,
+    ROUND(COUNT(pao2fio2ratio_min)::numeric / COUNT(*) * 100, 2) AS pf_coverage,
+    ROUND(COUNT(bun_max)::numeric / COUNT(*) * 100, 2) AS bun_coverage,
+
+    -- 3. 生理值分布审计 (用于快速发现单位错误)
+    -- 检查 Hgb 是否回到 10 左右（之前是 2.2）
+    ROUND(AVG(hemoglobin_min)::numeric, 2) AS avg_hgb, 
+    -- 检查 BUN 是否回到 5-10 左右（单位转换后）
+    ROUND(AVG(bun_max)::numeric, 2) AS avg_bun,
+    -- 检查 pH 是否在生理范围内
+    MIN(ph_min) AS ph_min_limit,
+    MAX(ph_min) AS ph_max_limit,
+    -- 检查乳酸中值
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY lactate_max) AS median_lactate
+
 FROM eicu_cview.ap_external_validation;
+
+--------------------------------------------------------------------------------
+-- 附加：各中心数据质量分布 (可选，用于排查是否某中心缺失特别严重)
+--------------------------------------------------------------------------------
+SELECT 
+    p.hospitalid,
+    COUNT(*) AS pts_count,
+    ROUND(AVG(pof)*100, 2) AS pof_rate,
+    ROUND(COUNT(lactate_max)::numeric / COUNT(*) * 100, 2) AS lac_coverage
+FROM eicu_cview.ap_external_validation v
+JOIN eicu_crd.patient p ON v.patientunitstayid = p.patientunitstayid
+GROUP BY p.hospitalid
+HAVING COUNT(*) > 10
+ORDER BY pts_count DESC
+LIMIT 10;
