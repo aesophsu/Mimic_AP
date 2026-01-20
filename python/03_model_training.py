@@ -358,7 +358,8 @@ def train_pipeline(target):
     train_assets = {
         'medians': X_train.median().to_dict(),
         'skewed_cols': existing_skewed,
-        'selected_features': selected_features
+        'selected_features': selected_features,
+        'all_features_before_lasso': X_train.columns.tolist()
     }
     assets_save_path = os.path.join(SAVE_DIR, f"train_assets_{target}.pkl")
     joblib.dump(train_assets, assets_save_path)
