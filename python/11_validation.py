@@ -4,82 +4,128 @@ import numpy as np
 import joblib
 import seaborn as sns
 import matplotlib.pyplot as plt
-from statsmodels.stats.outliers_influence import variance_inflation_factor
+from sklearn.calibration import calibration_curve
+from sklearn.metrics import brier_score_loss
 
 # =========================================================
-# 1. 加载资产
+# 1. 配置与路径
 # =========================================================
 BASE_DIR = ".."
-SELECTED_FEATURES_PATH = os.path.join(BASE_DIR, "models/selected_features.pkl")
-MIMIC_PATH = os.path.join(BASE_DIR, "data/cleaned/mimic_for_model.csv")
+DATA_DIR = os.path.join(BASE_DIR, "data/cleaned")
+MODELS_DIR = os.path.join(BASE_DIR, "models")
+SAVE_DIR = os.path.join(BASE_DIR, "results/calibration")
 
-selected_features = joblib.load(SELECTED_FEATURES_PATH)
-df_mimic = pd.read_csv(MIMIC_PATH)
-X_selected = df_mimic[selected_features].fillna(df_mimic[selected_features].median())
+if not os.path.exists(SAVE_DIR):
+    os.makedirs(SAVE_DIR, exist_ok=True)
 
-def run_enhanced_collinearity_audit():
-    print("="*60)
-    print("🔬 核心特征共线性审计报告 (Clinical Feature Audit)")
-    print("="*60)
+def run_module_12_enhanced_audit(target='pof'):
+    print("="*75)
+    print(f"🔬 模块 12: 临床校准审计与比值比 (OR) 分析 | 结局: {target.upper()}")
+    print("="*75)
 
-    # ---------------------------------------------------------
-    # A. 基础 Pearson 相关性分析
-    # ---------------------------------------------------------
-    corr_matrix = X_selected.corr()
+    # 1. 加载 eICU 外部验证数据与模型字典
+    eicu_path = os.path.join(DATA_DIR, f"eicu_for_model_{target}.csv")
+    model_dict_path = os.path.join(MODELS_DIR, f"all_models_{target}.pkl")
     
-    print("\n🚩 [Step 1] 高度相关特征对 (Pearson r > 0.5):")
-    high_corr_pairs = []
-    for i in range(len(corr_matrix.columns)):
-        for j in range(i):
-            r_val = corr_matrix.iloc[i, j]
-            if abs(r_val) > 0.5:
-                high_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j], r_val))
-                print(f"  - {corr_matrix.columns[i]:<15} vs {corr_matrix.columns[j]:<15} | r = {r_val:.4f}")
-    
-    if not high_corr_pairs:
-        print("  ✅ 未发现显著共线性对，特征独立性良好。")
+    if not (os.path.exists(eicu_path) and os.path.exists(model_dict_path)):
+        print(f"❌ 错误：缺少 {target} 的验证数据或模型包。")
+        return
+
+    df_eicu = pd.read_csv(eicu_path)
+    X_eicu = df_eicu.drop('target', axis=1)
+    y_eicu = df_eicu['target']
+    models_dict = joblib.load(model_dict_path)
 
     # ---------------------------------------------------------
-    # B. 多重共线性诊断 (VIF)
+    # A. 概率校准审计 (Calibration Curve)
     # ---------------------------------------------------------
-    # VIF > 5 或 10 通常认为存在严重共线性
-    print("\n🚩 [Step 2] 多重共线性诊断 (Variance Inflation Factor):")
-    vif_data = pd.DataFrame()
-    vif_data["Feature"] = X_selected.columns
-    vif_data["VIF"] = [variance_inflation_factor(X_selected.values, i) for i in range(len(X_selected.columns))]
-    vif_data = vif_data.sort_values(by="VIF", ascending=False)
+    print("\n🚩 [Step 1] 正在执行多模型校准审计 (Probability Calibration):")
+    plt.figure(figsize=(9, 8), dpi=150)
+    plt.plot([0, 1], [0, 1], "k--", label="Perfect Calibration (Ideal)", alpha=0.5)
     
-    for _, row in vif_data.iterrows():
-        status = "⚠️ 高" if row['VIF'] > 5 else "✅ 稳健"
-        print(f"  - {row['Feature']:<20} | VIF = {row['VIF']:>6.2f} | {status}")
+    calibration_metrics = []
+
+    for name, model in models_dict.items():
+        # 获取外部验证集预测概率
+        # 兼容性处理：如果是 Pipeline 则使用 .values
+        X_input = X_eicu.values if hasattr(model, 'named_steps') else X_eicu
+        y_prob = model.predict_proba(X_input)[:, 1]
+        
+        # 计算校准曲线与 Brier 分数
+        prob_true, prob_pred = calibration_curve(y_eicu, y_prob, n_bins=10)
+        brier = brier_score_loss(y_eicu, y_prob)
+        
+        # 绘图
+        plt.plot(prob_pred, prob_true, "s-", markersize=4, label=f"{name} (Brier: {brier:.4f})")
+        calibration_metrics.append((name, brier))
+        print(f"  - {name:<20} | Brier Score = {brier:.4f}")
+
+    plt.title(f"External Calibration Curve: {target.upper()}", fontsize=14)
+    plt.xlabel("Predicted Risk (Expected Probability)")
+    plt.ylabel("Observed Outcome (Actual Probability)")
+    plt.legend(loc="lower right", frameon=True)
+    plt.grid(alpha=0.3)
+    
+    cal_img_path = os.path.join(SAVE_DIR, f"calibration_audit_{target}.png")
+    plt.savefig(cal_img_path, bbox_inches='tight')
+    print(f"\n📊 校准审计图已保存至: {cal_img_path}")
 
     # ---------------------------------------------------------
-    # C. 可视化：层级聚类热图 (Clustermap)
+    # B. 比值比分析 (Odds Ratio for Nomogram)
     # ---------------------------------------------------------
-    # 聚类热图能直观显示哪些特征形成了“临床指标簇”
-    plt.figure(figsize=(12, 10))
-    g = sns.clustermap(corr_matrix, 
-                       annot=True, 
-                       fmt=".2f", 
-                       cmap='RdBu_r', 
-                       vmin=-1, vmax=1,
-                       figsize=(10, 10))
-    plt.title("Hierarchical Clustering of Core Features", y=1.02)
-    
-    save_path = os.path.join(BASE_DIR, "results/feature_collinearity_clustermap.png")
-    plt.savefig(save_path, bbox_inches='tight', dpi=300)
-    print(f"\n📊 聚类热图已保存至: {save_path}")
+    if "Logistic Regression" in models_dict:
+        print(f"\n🚩 [Step 2] 提取 {target.upper()} 临床风险权重 (Odds Ratios):")
+        lr_wrapper = models_dict["Logistic Regression"]
+        
+        # --- 修复代码开始 ---
+        # 1. 处理 CalibratedClassifierCV 包装
+        if hasattr(lr_wrapper, 'calibrated_classifiers_'):
+            # 提取第一个交叉验证折叠中的基模型
+            raw_model = lr_wrapper.calibrated_classifiers_[0].estimator
+        else:
+            raw_model = lr_wrapper
+
+        # 2. 处理 Pipeline 包装
+        if hasattr(raw_model, 'named_steps'):
+            final_lr = raw_model.named_steps['model']
+        else:
+            final_lr = raw_model
+
+        # 3. 提取系数 (确保它有 coef_ 属性)
+        if hasattr(final_lr, 'coef_'):
+            coefs = final_lr.coef_[0]
+            # --- 修复代码结束 ---
+            
+            or_values = np.exp(coefs)
+            
+            or_df = pd.DataFrame({
+                'Feature': X_eicu.columns,
+                'Beta_Coef': coefs,
+                'Odds_Ratio': or_values
+            }).sort_values(by='Odds_Ratio', ascending=False)
+
+            # 保存并打印结果
+            or_path = os.path.join(SAVE_DIR, f"odds_ratio_{target}.csv")
+            or_df.to_csv(or_path, index=False)
+            
+            for _, row in or_df.iterrows():
+                impact = "🚩 危险因素" if row['Odds_Ratio'] > 1 else "✅ 保护因素"
+                print(f"  - {row['Feature']:<20} | OR = {row['Odds_Ratio']:>6.2f} | {impact}")
+        else:
+            print("  ⚠️ 无法提取系数：模型不包含 coef_ 属性。")
+
+    # ---------------------------------------------------------
+    # C. 临床解释建议
+    # ---------------------------------------------------------
+    print("\n📝 [Step 3] 临床解释笔记 (Audit Notes):")
+    best_brier = min(calibration_metrics, key=lambda x: x[1])
+    print(f"  💡 预测可靠性：{best_brier[0]} 具有最低的 Brier 分数，代表其概率估计最精准。")
+    print("  💡 诺莫图转化：Logistic Regression 的 OR 值反映了单单位特征变化对发病胜算的贡献。")
+    print("  💡 风险校准：若曲线在理想线上方，代表模型在外部人群中倾向于低估风险（Under-prediction）。")
+
     plt.show()
 
-    # ---------------------------------------------------------
-    # D. 临床解释建议输出
-    # ---------------------------------------------------------
-    print("\n📝 [Step 3] 论文讨论素材 (Clinical Interpretation Advice):")
-    if any(v > 5 for v in vif_data['VIF']):
-        print("  💡 提示：存在 VIF > 5 的特征。在讨论中应解释这些变量虽然数学上相关，")
-        print("     但捕捉了患者不同生理维度的异常（如肾功能的代偿 vs 损伤）。")
-    else:
-        print("  💡 提示：所有特征 VIF 均处于理想水平。这增强了模型系数的可信度和解释性。")
-
 if __name__ == "__main__":
-    run_enhanced_collinearity_audit()
+    # 针对所有结局执行审计
+    for t in ['pof', 'composite_outcome', 'mortality_28d']:
+        run_module_12_enhanced_audit(t)
