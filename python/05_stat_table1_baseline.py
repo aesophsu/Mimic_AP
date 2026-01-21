@@ -2,153 +2,133 @@ import os
 import pandas as pd
 import numpy as np
 import joblib
+from tableone import TableOne
 from scipy import stats
 
 # =========================================================
-# 配置路径
+# 1. 配置与路径
 # =========================================================
 BASE_DIR = ".."
-# 关键修改：读取清洗后、标准化前的原始数据集 (请根据你实际文件名修改)
-RAW_DATA_PATH = os.path.join(BASE_DIR, "data/cleaned/mimic_for_model.csv") 
-SAVE_DIR = os.path.join(BASE_DIR, "results")
-MODEL_DIR = os.path.join(BASE_DIR, "models")
+MIMIC_PATH = os.path.join(BASE_DIR, "data/cleaned/mimic_for_table1.csv")
+EICU_PATH = os.path.join(BASE_DIR, "data/cleaned/eicu_for_table1.csv")
 
+SAVE_DIR = os.path.join(BASE_DIR, "results/tables")
 if not os.path.exists(SAVE_DIR): os.makedirs(SAVE_DIR)
 
-def run_module_05_raw_full():
-    print("="*70)
-    print("🚀 运行模块 05: 全量原始数值基线统计 (论文 Table 1 标准版)")
-    print("="*70)
+# 学术命名映射表
+FEATURE_MAP = {
+    'admission_age': 'Age, years',
+    'gender': 'Sex, Male (%)',
+    'bmi': 'BMI, kg/m²',
+    'creatinine_max': 'Max Creatinine, mg/dL',
+    'bun_max': 'Max BUN, mg/dL',
+    'wbc_max': 'Max WBC, 10⁹/L',
+    'lactate_max': 'Max Lactate, mmol/L',
+    'pao2fio2ratio_min': 'Min PaO2/FiO2',
+    'alt_max': 'Max ALT, U/L',
+    'ast_max': 'Max AST, U/L',
+    'alp_max': 'Max ALP, U/L',
+    'pof': 'Persistent Organ Failure',
+    'composite_outcome': 'Composite Outcome',
+    'mortality_28d': '28-day Mortality',
+    'Renal_Group': 'Renal Subgroup'
+}
 
-    # 1. 加载数据
-    if not os.path.exists(RAW_DATA_PATH):
-        print(f"❌ 错误: 找不到原始数据文件 {RAW_DATA_PATH}")
+def run_module_03_audit():
+    print("\n" + "="*85)
+    print("📊 模块 03: 基线特征描述与跨库人群深度审计 (SMD Standardized)")
+    print("="*85)
+
+    # 1. 数据加载
+    if not os.path.exists(MIMIC_PATH) or not os.path.exists(EICU_PATH):
+        print("❌ 错误：输入文件丢失。")
         return
+
+    df_m = pd.read_csv(MIMIC_PATH)
+    df_e = pd.read_csv(EICU_PATH)
+
+    # 2. 预处理与对齐
+    df_m['Cohort'] = 'MIMIC-IV (Derivation)'
+    df_e['Cohort'] = 'eICU (External Val)'
     
-    df = pd.read_csv(RAW_DATA_PATH)
+    # 修复替换警告与下推行为
+    for df in [df_m, df_e]:
+        if 'gender' in df.columns:
+            df['gender'] = df['gender'].replace({'M': 1, 'F': 0, 'Male': 1, 'Female': 0})
+            df['gender'] = df['gender'].infer_objects(copy=False) # 显式调用以消除警告
+
+    # 3. 自动探测共同变量
+    common_vars = [v for v in df_e.columns if v in df_m.columns and v not in ['Cohort', 'id', 'stay_id']]
+    categorical = ['gender', 'pof', 'composite_outcome', 'mortality_28d']
+    categorical = [c for c in categorical if c in common_vars]
+
+    # 4. 🧠 深度审计：正态性探测
+    print("🧪 正在执行正态性检验...")
+    nonnormal = []
+    # 这里的 concat 仅用于探测分布，不需要 reset_index
+    df_combined_temp = pd.concat([df_m[common_vars], df_e[common_vars]], axis=0)
+    for var in [v for v in common_vars if v not in categorical]:
+        data_sample = df_combined_temp[var].dropna()
+        if len(data_sample) > 20:
+            stat, p = stats.normaltest(data_sample.sample(min(len(data_sample), 1000)))
+            if p < 0.05:
+                nonnormal.append(var)
+                
+    # 5. 🚀 任务 A: 生成跨库对比表 (MIMIC vs eICU)
+    print("\n⏳ 任务 A: 正在计算跨库 SMD 审计表...")
+    df_cross = pd.concat([df_m, df_e], axis=0).reset_index(drop=True)
+    table1 = TableOne(
+        df_cross, columns=common_vars, categorical=categorical,
+        groupby='Cohort', nonnormal=nonnormal, 
+        pval=True, smd=True, 
+        rename=FEATURE_MAP, display_all=True
+    )
+    table1.to_csv(os.path.join(SAVE_DIR, "Table1_Cross_Cohort_Audit.csv"))
+    # --- 新增输出 ---
+    print("\n📊 Table 1 核心内容预览 (MIMIC vs eICU):")
+    print(table1.tableone.head(15)) # 展示前15行，涵盖人口学和结局
+
+    # 6. 🚀 任务 B: 生成 MIMIC 内部单因素分析 (POF 分组)
+    print("\n⏳ 任务 B: 正在计算 MIMIC 内部 POF 相关性分析...")
+    internal_vars = [v for v in common_vars if v not in ['composite_outcome', 'mortality_28d']]
+    table2 = TableOne(
+        df_m, columns=internal_vars, categorical=[c for c in categorical if c == 'gender'],
+        groupby='pof', nonnormal=nonnormal, 
+        pval=True, rename=FEATURE_MAP
+    )
+    table2.to_csv(os.path.join(SAVE_DIR, "Table2_Internal_POF_Analysis.csv"))
+    # --- 新增输出 ---
+    print("\n📊 Table 2 核心内容预览 (POF vs Non-POF):")
+    print(table2.tableone.head(10))
+
+    # 7. 🚀 任务 C: 肾功能亚组对比 (Renal Subgroup)
+    print("\n⏳ 任务 C: 正在计算 MIMIC 内部肾功能亚组分析...")
+    df_m['Renal_Group'] = np.where(df_m['creatinine_max'] > 1.2, 'Renal Injury', 'Normal')
+    renal_vars = [v for v in internal_vars if v != 'creatinine_max'] + ['Renal_Group']
+    table3 = TableOne(
+        df_m, columns=renal_vars, categorical=['gender', 'pof'],
+        groupby='Renal_Group', nonnormal=nonnormal,
+        pval=True, rename=FEATURE_MAP
+    )
+    table3.to_csv(os.path.join(SAVE_DIR, "Table3_Renal_Subgroup_Analysis.csv"))
+    # --- 新增输出 ---
+    print("\n📊 Table 3 核心内容预览 (Renal Subgroup):")
+    print(table3.tableone.head(10))
+
+    # 8. 🚀 任务 D: 三结局发生率对比审计
+    print("\n📊 任务 D: 正在审计多结局发生率 (Incidence Analysis)...")
+    outcomes = ['pof', 'composite_outcome', 'mortality_28d']
+    mimic_inc = (df_m[outcomes].mean() * 100).rename('MIMIC-IV (%)')
+    eicu_inc = (df_e[outcomes].mean() * 100).rename('eICU (%)')
+    incidence_table = pd.concat([mimic_inc, eicu_inc], axis=1)
+    incidence_table.index = [FEATURE_MAP.get(i, i) for i in incidence_table.index]
     
-    # 2. 核心特征对齐
-    try:
-        selected_features = joblib.load(os.path.join(MODEL_DIR, "selected_features.pkl"))
-        print(f"✅ 已同步模型核心特征: {len(selected_features)} 个")
-    except:
-        selected_features = []
-        print("⚠️ 警告: 未找到 selected_features.pkl，将使用默认列名")
-
-    # 定义目标变量和分组 N 值
-    target = 'pof'
-    n_total = len(df)
-    n_pof = int(df[target].sum())
-    n_non_pof = n_total - n_pof
+    print("-" * 50)
+    print(incidence_table.round(2)) # 这里本身已有打印输出
+    print("-" * 50)
+    incidence_table.to_csv(os.path.join(SAVE_DIR, "Table4_Outcome_Incidence_Compare.csv"))
     
-    print(f"📊 分析样本总量: {n_total} (Non-POF: {n_non_pof}, POF: {n_pof})")
-
-    # 定义变量分类
-    # 连续变量：人口学 + 模型核心指标
-    continuous_vars = ['admission_age', 'weight_admit', 'bmi'] + [f for f in selected_features if f not in ['admission_age']]
-    # 分类变量：性别 + 既往史
-    categorical_vars = ['gender', 'heart_failure', 'chronic_kidney_disease', 'malignant_tumor']
-
-    table1_data = []
-
-    # --- A. 连续变量处理 (原始数值) ---
-    for var in [v for v in continuous_vars if v in df.columns]:
-        g0 = df[df[target] == 0][var].dropna()
-        g1 = df[df[target] == 1][var].dropna()
-        
-        # 统计描述逻辑
-        _, p_norm = stats.shapiro(df[var].dropna()[:5000]) # 全量数据正态检验
-        
-        if p_norm > 0.05:
-            # 正态分布: Mean ± SD
-            desc0 = f"{g0.mean():.2f} ± {g0.std():.2f}"
-            desc1 = f"{g1.mean():.2f} ± {g1.std():.2f}"
-            _, p_val = stats.ttest_ind(g0, g1)
-            method = "t-test"
-        else:
-            # 非正态分布: Median [IQR]
-            desc0 = f"{g0.median():.2f} [{g0.quantile(0.25):.2f}-{g0.quantile(0.75):.2f}]"
-            desc1 = f"{g1.median():.2f} [{g1.quantile(0.25):.2f}-{g1.quantile(0.75):.2f}]"
-            _, p_val = stats.mannwhitneyu(g0, g1)
-            method = "Mann-Whitney U"
-
-        table1_data.append({
-            'Variable': var,
-            f'Non-POF (N={n_non_pof})': desc0,
-            f'POF (N={n_pof})': desc1,
-            'P-value': p_val,
-            'Test': method
-        })
-
-    # --- B. 分类变量处理 ---
-    # --- B. 分类变量处理 (修复空数据报错) ---
-    for var in categorical_vars:
-        if var not in df.columns:
-            print(f"   ⚠️ 跳过分类变量 {var}: 不在列名中")
-            continue
-            
-        # 统计有效样本数（排除该列的缺失值）
-        valid_df = df[[var, target]].dropna()
-        if len(valid_df) == 0:
-            print(f"   ⚠️ 跳过分类变量 {var}: 该列数据全为空")
-            continue
-
-        # 标签映射逻辑
-        if var == 'gender':
-            valid_df[var+'_label'] = valid_df[var].map({1: 'Male', 0: 'Female'})
-        else:
-            valid_df[var+'_label'] = valid_df[var].map({1: 'Yes', 0: 'No'})
-            
-        # 生成交叉表
-        contingency = pd.crosstab(valid_df[var+'_label'], valid_df[target])
-        
-        # 健壮性检查：交叉表必须是 2x2 或更大
-        if contingency.size == 0 or contingency.shape[0] < 2:
-            print(f"   ⚠️ 跳过分类变量 {var}: 数据分布不足以进行卡方检验")
-            continue
-        
-        try:
-            _, p_chi2, _, _ = stats.chi2_contingency(contingency)
-        except ValueError:
-            p_chi2 = np.nan
-
-        first_row = True
-        for idx in contingency.index:
-            # 动态获取当前变量下的组内样本量
-            c0 = contingency.loc[idx, 0] if 0 in contingency.columns else 0
-            c1 = contingency.loc[idx, 1] if 1 in contingency.columns else 0
-            
-            # 使用全量 N 值计算百分比
-            desc0 = f"{int(c0)} ({c0/n_non_pof*100:.1f}%)"
-            desc1 = f"{int(c1)} ({c1/n_pof*100:.1f}%)"
-            
-            table1_data.append({
-                'Variable': f"{var}: {idx}",
-                f'Non-POF (N={n_non_pof})': desc0,
-                f'POF (N={n_pof})': desc1,
-                'P-value': p_chi2 if first_row else np.nan,
-                'Test': "Chi-square"
-            })
-            first_row = False
-
-    # 3. 输出与格式化
-    table1_df = pd.DataFrame(table1_data)
-    
-    # 严格的 P 值格式化
-    def format_p(x):
-        if pd.isna(x): return ""
-        if x < 0.001: return "<0.001"
-        return f"{x:.3f}"
-
-    table1_df['P-value'] = table1_df['P-value'].apply(format_p)
-    
-    output_path = os.path.join(SAVE_DIR, "Table1_Full_Raw_Data.csv")
-    table1_df.to_csv(output_path, index=False, encoding='utf-8-sig')
-    
-    print("-" * 85)
-    print(table1_df.to_string(index=False))
-    print("-" * 85)
-    print(f"✅ 全量原始数值 Table 1 已生成: {output_path}")
+    print(f"\n✅ 审计完成！四张表格已保存至: {SAVE_DIR}")
 
 if __name__ == "__main__":
-    run_module_05_raw_full()
+    run_module_03_audit()
