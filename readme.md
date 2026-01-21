@@ -60,56 +60,56 @@ project_root/
 │
 ├── data/
 │   ├── raw/                           # 原始数据快照 (Immutable)
-│   │   ├── mimic_raw_data.csv         # 01 步 SQL 提取原始产物
-│   │   └── eicu_raw_data.csv          # 08 步 SQL 提取产物 (基于 selected_features.json)
+│   │   ├── mimic_raw_data.csv         # 01 步 SQL 提取产物
+│   │   └── eicu_raw_data.csv          # 08 步 SQL 提取产物 (依据 selected_features.json)
 │   ├── cleaned/                       # MIMIC 开发集中间产物
-│   │   ├── mimic_raw_scale.csv        # 02 步产出：单位对齐与生理审计后的物理尺度数据
-│   │   └── mimic_processed.csv        # 03 步产出：标准化后的张量 (含 subgroup_no_renal 标记)
+│   │   ├── mimic_raw_scale.csv        # 02 步产出：Log 转换前的物理尺度数据 (用于 Table 1)
+│   │   └── mimic_processed.csv        # 03 步产出：Log 转换 + MICE 插补 + 标准化后的张量
 │   └── external/                      # eICU 验证集中间产物
 │       ├── eicu_aligned.csv           # 09 步产出：物理单位对齐后的数据
 │       └── eicu_processed.csv         # 09 步产出：应用 MIMIC Scaler 变换后的建模数据
 │
-├── scripts/                           # 14 步标准化工作流 (Python/SQL)
-│   ├── 01_sql/                        # 数据库提取层
+├── scripts/                           # 14 步标准化工作流
+│   ├── 01_sql/                        # 数据库提取层 (提取 SQL)
 │   ├── 02_preprocess/                 # 特征工程层
-│   │   ├── 02_mimic_cleaning.py       # 核心：字典驱动审计、异常值剔除
-│   │   ├── 03_mimic_standardization.py # 核心：资产化(Scaler)、保存建模张量
+│   │   ├── 02_mimic_cleaning.py       # 物理清洗、字典对齐
+│   │   ├── 03_mimic_standardization.py # [重构] 剥离 Scaler、Log 转换、MICE 插补、保存持久化资产
 │   │   └── 09_eicu_alignment_cleaning.py
 │   ├── 03_modeling/                   # 模型竞赛层
-│   │   ├── 05_feature_selection_lasso.py # 下一步：LASSO 特征精炼
-│   │   ├── 06_model_training_main.py
-│   │   └── 07_optimal_cutoff_analysis.py
+│   │   ├── 05_feature_selection_lasso.py # [新建] 执行 1-SE 准则、学术路径图、产出特征清单
+│   │   ├── 06_model_training_main.py  # [重构] 读取清单、Optuna 寻优、5 大模型竞赛、概率校准
+│   │   └── 07_optimal_cutoff_analysis.py # [规划] 计算 Youden Index 最佳截断值
 │   └── 04_audit_eval/                 # 验证与统计层
-│       ├── 04_mimic_stat_audit.py     # 核心：生成 P-value 审计与缺失值热图
-│       ├── 10_cross_cohort_audit.py
-│       ├── 11_external_validation_perf.py
-│       ├── 12_model_interpretation_shap.py
-│       ├── 13_clinical_calibration_dca.py
-│       └── 14_nomogram_odds_ratio.py
+│       ├── 04_mimic_stat_audit.py     # 深度描述统计、缺失值热图
+│       ├── 11_external_validation_perf.py 
+│       ├── 12_model_interpretation_shap.py # [新建] 针对精炼特征的全局/个体 SHAP 解释
+│       ├── 13_clinical_calibration_dca.py # 决策曲线分析 (DCA)
+│       └── 14_nomogram_odds_ratio.py      # 列线图与 OR 值导出
 │
-├── artifacts/                         # 项目的大脑：跨脚本调用的资产
-│   ├── models/                        # 模型资产包 (含 thresholds.json)
-│   ├── scalers/                       # 尺度转换参数
-│   │   └── mimic_scaler.joblib        # 03 步保存，用于 eICU 标准化对齐
+├── artifacts/                         # 项目的大脑：跨脚本调用的中枢资产
+│   ├── models/                        # 模型资产包
+│   │   ├── pof/                       # best_model.joblib, all_models_dict.pkl
+│   │   ├── mortality/
+│   │   └── composite/
+│   ├── scalers/                       # 尺度转换持久化文件 (核心！)
+│   │   ├── mimic_scaler.joblib        # 03 步保存的 StandardScaler
+│   │   ├── mimic_mice_imputer.joblib  # 03 步保存的 MICE Imputer
+│   │   └── skewed_cols_config.pkl     # 记录需要进行 Log1p 转换的列名
 │   └── features/                      # 特征中枢配置
-│       ├── feature_dictionary.json    # 全集定义
-│       └── selected_features.json     # 05 步产出：精简后的特征清单
+│       ├── feature_dictionary.json    # 特征定义全集
+│       └── selected_features.json     # 05 步 LASSO 产出的 Top 12 精简清单
 │
-├── results/                           # 产出层 (直接用于撰写论文)
-│   ├── tables/                        # CSV 统计报表 (Table 1-4)
-│   │   ├── table1_baseline.csv        # 03 步：初步基线表
-│   │   ├── table2_renal_subgroup.csv  # 03 步：初步亚组表
-│   │   ├── table_1_detailed_audit.csv # 04 步：含 P-value 的深度审计表
-│   │   └── table_2_subgroup_audit.csv # 04 步：含 P-value 的亚组审计表
-│   └── figures/                       # 高清科研图表
-│       ├── audit/                     # 04 步新增：数据质量审计图
-│       │   └── missingness_heatmap.png # 缺失值分布图
-│       ├── pof/                       # 结局特异性分析图
+├── results/                           # 产出层 (直接用于论文)
+│   ├── tables/                        # CSV 统计报表 (Table 1-4, OR表, 性能汇总)
+│   └── figures/                       # 高清科研插图 (png/pdf/svg)
+│       ├── audit/                     # 缺失值热图、亚组分布图
+│       ├── lasso/                     # 05 步：Lasso CV 路径图与 1-SE 诊断图
+│       ├── pof/                       # ROC, Calibration, DCA, SHAP (按结局分类)
 │       ├── mortality/
 │       └── composite/
 │
-├── logs/                              # 运行审计记录
-└── requirements.txt                   # 环境依赖 (pandas, numpy, tableone, seaborn)
+├── logs/                              # 运行审计与 Optuna 寻优日志
+└── requirements.txt                   # 环境依赖 (shap, optuna, xgboost, tableone等)
 
 ```
 
