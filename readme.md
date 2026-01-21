@@ -1,7 +1,3 @@
-**14步标准研究流程**：
-
----
-
 ### 第一阶段：数据工程 (MIMIC)
 
 * **`01_mimic_sql_extraction.sql`**：提取 MIMIC 候选特征与结局。
