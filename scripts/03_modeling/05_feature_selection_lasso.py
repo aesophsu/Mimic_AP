@@ -57,7 +57,7 @@ def run_lasso_selection_flow():
 
         # 5. 绘制学术级 LASSO 诊断图
         plot_academic_lasso(log_alphas, mse_mean, mse_se, idx_min, idx_1se, active_counts, target)
-
+        plot_lasso_trajectories(log_alphas, coefs_path, X.columns, target)
         # 6. 特征提取与排序 (修正解包错误)
         coef_abs = np.abs(lasso.coef_)
         top_indices = np.argsort(coef_abs)[-12:] 
@@ -132,5 +132,27 @@ def plot_academic_lasso(log_alphas, mse_mean, mse_se, idx_min, idx_1se, active_c
     plt.savefig(os.path.join(FIG_DIR, f"lasso_diag_{target}.png"), bbox_inches='tight')
     plt.close()
 
+def plot_lasso_trajectories(log_alphas, coefs_path, feature_names, target):
+    """绘制 LASSO 系数随 Lambda 变化的轨迹图 (SCI 风格)"""
+    plt.figure(figsize=(10, 7), dpi=300)
+    
+    # coefs_path 的形状通常是 (n_features, n_alphas)
+    for i in range(coefs_path.shape[0]):
+        plt.plot(log_alphas, coefs_path[i, :], label=feature_names[i] if np.max(np.abs(coefs_path[i, :])) > 0.05 else "")
+
+    plt.axvline(log_alphas[0], color='black', linestyle=':', alpha=0.3)
+    plt.xlabel(r'$\log_{10}(\lambda)$', fontsize=12)
+    plt.ylabel('Coefficients', fontsize=12)
+    plt.title(f'LASSO Regression Trajectories: {target.upper()}', fontsize=14, fontweight='bold')
+    
+    # 只显示最终入选或贡献较大的图例，避免图例过多遮挡图像
+    # 如果特征太多，建议不显示 legend 或者只显示 Top 10
+    # plt.legend(loc='upper right', bbox_to_anchor=(1.2, 1), fontsize=8)
+    
+    plt.grid(alpha=0.2)
+    plt.tight_layout()
+    plt.savefig(os.path.join(FIG_DIR, f"lasso_traj_{target}.png"), bbox_inches='tight')
+    plt.close()
+    
 if __name__ == "__main__":
     run_lasso_selection_flow()
