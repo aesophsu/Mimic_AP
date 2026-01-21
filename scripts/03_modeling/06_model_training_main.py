@@ -27,11 +27,8 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 BASE_DIR = "../../"
 INPUT_PATH = os.path.join(BASE_DIR, "data/cleaned/mimic_processed.csv")
 JSON_FEAT_PATH = os.path.join(BASE_DIR, "artifacts/features/selected_features.json")
-SAVE_DIR = os.path.join(BASE_DIR, "artifacts/models")
-FIG_DIR = os.path.join(BASE_DIR, "results/figures/performance")
-
-for d in [SAVE_DIR, FIG_DIR]:
-    os.makedirs(d, exist_ok=True)
+MODEL_ROOT = os.path.join(BASE_DIR, "artifacts/models")
+RESULT_ROOT = os.path.join(BASE_DIR, "results/figures")
 
 # =========================================================
 # 辅助工具函数
@@ -67,7 +64,10 @@ def run_model_training_flow():
 
     for target in feature_config.keys():
         print(f"\n\n{'='*30} 正在分析结局: {target.upper()} {'='*30}")
-        
+        target_model_dir = os.path.join(MODEL_ROOT, target.lower())
+        target_fig_dir = os.path.join(RESULT_ROOT, target.lower())
+        for d in [target_model_dir, target_fig_dir]:
+            os.makedirs(d, exist_ok=True)
         # 2. 准备该结局专属特征集
         selected_features = feature_config[target]['features']
         X = df[selected_features].copy()
@@ -94,7 +94,7 @@ def run_model_training_flow():
             }
             model = XGBClassifier(**param)
             cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-            return cross_val_score(model, X_train_imp, y_train, cv=cv, scoring='roc_auc').mean()
+            return cross_val_score(model, X_train_pre, y_train, cv=cv, scoring='roc_auc').mean()
 
         study = optuna.create_study(direction='maximize')
         study.optimize(objective, n_trials=30) # 生产环境建议 50-100
@@ -103,7 +103,7 @@ def run_model_training_flow():
         # 5. 模型竞赛 (含概率校准)
         models = {
             "Logistic Regression": LogisticRegression(class_weight='balanced', max_iter=1000),
-            "Random Forest": RandomForestClassifier(n_estimators=200, max_depth=5, random_state=42, class_weight='balanced')
+            "Random Forest": RandomForestClassifier(n_estimators=200, max_depth=5, random_state=42, class_weight='balanced'),
             "XGBoost": best_xgb,
             "SVM": SVC(probability=True, class_weight='balanced'),
             "Decision Tree": DecisionTreeClassifier(max_depth=5, class_weight='balanced')
@@ -121,8 +121,17 @@ def run_model_training_flow():
             clf = CalibratedClassifierCV(m, cv=3, method='isotonic')
             clf.fit(X_train_pre, y_train) 
             calibrated_results[name] = clf
-            X_test_pre = scaler_pre.transform(imputer_pre.transform(X_test)) # 严谨：用 train 的参数转 test
+            
+            # 生成测试集预处理数据
+            X_test_pre = scaler_pre.transform(imputer_pre.transform(X_test))
             y_prob = clf.predict_proba(X_test_pre)[:, 1]
+
+            # --- 全人群评估 (Main) ---
+            auc_main = roc_auc_score(y_test, y_prob)
+            brier = brier_score_loss(y_test, y_prob)
+            low_m, high_m = get_auc_ci(clf, X_test_pre, y_test)
+            
+            # --- 亚组评估 (No-Renal) ---
             sub_mask = (sub_test == 1).values
             if len(np.unique(y_test[sub_mask])) > 1:
                 auc_sub = roc_auc_score(y_test[sub_mask], y_prob[sub_mask])
@@ -130,6 +139,7 @@ def run_model_training_flow():
             else:
                 auc_sub, low_s, high_s = 0, 0, 0
 
+            # 格式化输出
             main_auc_str = f"{auc_main:.3f} ({low_m:.3f}-{high_m:.3f})"
             sub_auc_str = f"{auc_sub:.3f} ({low_s:.3f}-{high_s:.3f})"
             
@@ -144,18 +154,36 @@ def run_model_training_flow():
                 "Brier": round(brier, 4)
             })
 
-        # 6. 保存资产
-        joblib.dump(calibrated_results, os.path.join(SAVE_DIR, f"models_{target}.pkl"))
+        # =========================================================
+        # 6. 保存资产 (针对每个 Target 结局)
+        # =========================================================
+        print(f"💾 正在保存资产至: {target_model_dir}")
+        
+        # 修改 joblib.dump 的路径指向 target_model_dir
+        joblib.dump(calibrated_results, os.path.join(target_model_dir, "all_models_dict.pkl"))
+        joblib.dump(scaler_pre, os.path.join(target_model_dir, "scaler.pkl"))
+        joblib.dump(imputer_pre, os.path.join(target_model_dir, "imputer.pkl"))
+        
+        with open(os.path.join(target_model_dir, "selected_features.json"), 'w') as f:
+            json.dump(selected_features, f)
+            
+        joblib.dump(study, os.path.join(target_model_dir, "optuna_study.pkl"))
+        
+        eval_assets = {'X_test_pre': X_test_pre, 'y_test': y_test.values, 'sub_mask': sub_mask}
+        joblib.dump(eval_assets, os.path.join(target_model_dir, "eval_data.pkl"))
+
+        # ---------------------------------------------------------
+        # 7. 绘图 (传入 target_fig_dir)
+        # ---------------------------------------------------------
+        plot_performance(calibrated_results, X_test_pre, y_test, target, target_fig_dir)
+
         global_performance.extend(target_summary)
 
-        # 7. 绘图
-        plot_performance(calibrated_results, X_test_imp, y_test, target)
+    # 最终汇总表存放在 artifacts/models 根目录
+    pd.DataFrame(global_performance).to_csv(os.path.join(MODEL_ROOT, "performance_report.csv"), index=False)
+    print(f"\n🚀 训练流程全部完成！报告已存至: {MODEL_ROOT}")
 
-    # 生成最终汇总表
-    pd.DataFrame(global_performance).to_csv(os.path.join(SAVE_DIR, "performance_report.csv"), index=False)
-    print(f"\n🚀 训练流程全部完成！报告已存至: {SAVE_DIR}")
-
-def plot_performance(models, X_test, y_test, target):
+def plot_performance(models, X_test, y_test, target, save_path):
     """将 ROC 和 Calibration 曲线生成为两个独立的学术图片"""
     
     # --- 1. 绘制并保存独立 ROC 曲线 ---
@@ -176,9 +204,8 @@ def plot_performance(models, X_test, y_test, target):
     plt.grid(alpha=0.3)
     plt.tight_layout()
     
-    roc_path = os.path.join(FIG_DIR, f"Figure_ROC_{target}.png")
+    roc_path = os.path.join(save_path, "ROC_Curve.png")
     plt.savefig(roc_path, bbox_inches='tight')
-    plt.show()
     plt.close()
 
     # --- 2. 绘制并保存独立校准曲线 (Calibration) ---
@@ -196,9 +223,8 @@ def plot_performance(models, X_test, y_test, target):
     plt.grid(alpha=0.3)
     plt.tight_layout()
     
-    calib_path = os.path.join(FIG_DIR, f"Figure_Calibration_{target}.png")
+    calib_path = os.path.join(save_path, "Calibration_Curve.png")
     plt.savefig(calib_path, bbox_inches='tight')
-    plt.show()
     plt.close()
     
     print(f"✅ 图片已保存:\n   - ROC: {roc_path}\n   - Calib: {calib_path}")
