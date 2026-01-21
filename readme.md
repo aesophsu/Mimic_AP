@@ -63,57 +63,53 @@ project_root/
 │   │   ├── mimic_raw_data.csv         # 01 步 SQL 提取原始产物
 │   │   └── eicu_raw_data.csv          # 08 步 SQL 提取产物 (基于 selected_features.json)
 │   ├── cleaned/                       # MIMIC 开发集中间产物
-│   │   ├── mimic_raw_scale.csv        # 02 步产出：单位对齐与异常值处理后的物理值 (TableOne 使用)
-│   │   └── mimic_processed.csv        # 03 步产出：Z-score 标准化后的建模张量 (包含亚组标记)
+│   │   ├── mimic_raw_scale.csv        # 02 步产出：单位对齐与生理审计后的物理尺度数据
+│   │   └── mimic_processed.csv        # 03 步产出：标准化后的张量 (含 subgroup_no_renal 标记)
 │   └── external/                      # eICU 验证集中间产物
 │       ├── eicu_aligned.csv           # 09 步产出：物理单位对齐后的数据
-│       └── eicu_processed.csv         # 09 步产出：应用 MIMIC Scaler 变换后的数据
+│       └── eicu_processed.csv         # 09 步产出：应用 MIMIC Scaler 变换后的建模数据
 │
 ├── scripts/                           # 14 步标准化工作流 (Python/SQL)
 │   ├── 01_sql/                        # 数据库提取层
-│   │   ├── 01_mimic_extraction.sql
-│   │   └── 08_eicu_extraction.sql
 │   ├── 02_preprocess/                 # 特征工程层
-│   │   ├── 02_mimic_cleaning.py       # 核心：字典驱动审计、单位对齐、生理范围约束
-│   │   ├── 03_mimic_standardization.py # 核心：TableOne 统计、Scaler 拟合、建模张量保存
-│   │   └── 09_eicu_alignment_cleaning.py # 外部对齐：加载字典与 Scaler 资产
+│   │   ├── 02_mimic_cleaning.py       # 核心：字典驱动审计、异常值剔除
+│   │   ├── 03_mimic_standardization.py # 核心：资产化(Scaler)、保存建模张量
+│   │   └── 09_eicu_alignment_cleaning.py
 │   ├── 03_modeling/                   # 模型竞赛层
-│   │   ├── 05_feature_selection_lasso.py
-│   │   ├── 06_model_training_main.py  # 并行训练三种结局的 5 大模型
-│   │   └── 07_optimal_cutoff_analysis.py # 确定最佳截断值并存入 thresholds.json
+│   │   ├── 05_feature_selection_lasso.py # 下一步：LASSO 特征精炼
+│   │   ├── 06_model_training_main.py
+│   │   └── 07_optimal_cutoff_analysis.py
 │   └── 04_audit_eval/                 # 验证与统计层
-│       ├── 04_mimic_stat_audit.py     # 深度亚组趋势分析与单因素筛选
-│       ├── 10_cross_cohort_audit.py   # 生成跨库 Table 1 (人群漂移分析)
-│       ├── 11_external_validation_perf.py # 外部效能评价与迁移审计
+│       ├── 04_mimic_stat_audit.py     # 核心：生成 P-value 审计与缺失值热图
+│       ├── 10_cross_cohort_audit.py
+│       ├── 11_external_validation_perf.py
 │       ├── 12_model_interpretation_shap.py
 │       ├── 13_clinical_calibration_dca.py
 │       └── 14_nomogram_odds_ratio.py
 │
-├── artifacts/                         # 项目的大脑：持久化资产
-│   ├── models/                        # 模型资产包
-│   │   ├── pof/                       # 含 best_model_xgb.joblib, thresholds.json
-│   │   ├── mortality/                 # 含 best_model_lr.joblib, thresholds.json
-│   │   └── composite/
-│   ├── scalers/                       # 尺度转换参数 (必须跨库共用)
-│   │   └── mimic_scaler.joblib        # 03 步保存，09 步加载
+├── artifacts/                         # 项目的大脑：跨脚本调用的资产
+│   ├── models/                        # 模型资产包 (含 thresholds.json)
+│   ├── scalers/                       # 尺度转换参数
+│   │   └── mimic_scaler.joblib        # 03 步保存，用于 eICU 标准化对齐
 │   └── features/                      # 特征中枢配置
-│       ├── feature_dictionary.json    # 全集：定义单位、量级与生理极限
-│       └── selected_features.json     # 子集：LASSO 筛选出的入模特征清单
+│       ├── feature_dictionary.json    # 全集定义
+│       └── selected_features.json     # 05 步产出：精简后的特征清单
 │
 ├── results/                           # 产出层 (直接用于撰写论文)
-│   ├── tables/                        # CSV 统计报表
-│   │   ├── table1_baseline.csv        # 03 步自动生成
-│   │   ├── table2_renal_subgroup.csv  # 03 步亚组对比生成
-│   │   ├── table_cross_cohort.csv     # 10 步对比生成
-│   │   ├── model_metrics.csv          # 内部与外部效能汇总
-│   │   └── odds_ratios.csv            # 变量 OR 值列表
-│   └── figures/                       # 高清科研图表 (png/pdf)
-│       ├── pof/                       # AUC, Calibration, DCA, SHAP (按结局隔离)
+│   ├── tables/                        # CSV 统计报表 (Table 1-4)
+│   │   ├── table1_baseline.csv        # 03 步：初步基线表
+│   │   ├── table2_renal_subgroup.csv  # 03 步：初步亚组表
+│   │   ├── table_1_detailed_audit.csv # 04 步：含 P-value 的深度审计表
+│   │   └── table_2_subgroup_audit.csv # 04 步：含 P-value 的亚组审计表
+│   └── figures/                       # 高清科研图表
+│       ├── audit/                     # 04 步新增：数据质量审计图
+│       │   └── missingness_heatmap.png # 缺失值分布图
+│       ├── pof/                       # 结局特异性分析图
 │       ├── mortality/
 │       └── composite/
 │
 ├── logs/                              # 运行审计记录
-└── requirements.txt                   # 环境依赖
+└── requirements.txt                   # 环境依赖 (pandas, numpy, tableone, seaborn)
 
 ```
 
