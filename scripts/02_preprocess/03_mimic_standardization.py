@@ -45,6 +45,11 @@ def run_mimic_standardization():
             (df['creatinine_max'] < 1.5) & (df['chronic_kidney_disease'] == 0)
         ).astype(int)
         print(f"✅ 亚组标记完成: '无预存肾损伤' n = {df['subgroup_no_renal'].sum()}")
+        
+    # LASSO 不接受字符串，必须在此处转换
+    if 'gender' in df.columns and df['gender'].dtype == 'object':
+        df['gender'] = df['gender'].map({'M': 1, 'F': 0})
+        print("✅ 字段 'gender' 已完成数值化映射 (M->1, F->0)")
 
     # =========================================================
     # 3. 📊 自动化统计分析 (Table 1 & 2) - 基于物理尺度
@@ -79,6 +84,12 @@ def run_mimic_standardization():
     ]
     df_model = df.drop(columns=[c for c in drop_from_modeling if c in df.columns])
     
+    # 强制剔除所有剩余的非数值列 (例如 race 等未映射的文本)
+    remaining_text = df_model.select_dtypes(include=['object']).columns.tolist()
+    if remaining_text:
+        print(f"⚠️ 警告: 强制剔除非数值列以防 LASSO 报错: {remaining_text}")
+        df_model = df_model.drop(columns=remaining_text)
+        
     # 确定需要预处理的数值列 (排除标签和二分类列)
     binary_cols = outcome_cols + categorical
     numeric_features = [c for c in df_model.select_dtypes(include=[np.number]).columns 
