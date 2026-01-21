@@ -65,37 +65,62 @@
 project_root/
 │
 ├── data/
-│   ├── raw/                      # 原始 SQL 提取快照 (只读)
-│   │   ├── mimic_raw_data.csv    # 01 步产出
-│   │   └── eicu_raw_data.csv     # 08 步产出 (仅含选定特征)
-│   ├── cleaned/                  # MIMIC 处理后的数据集
-│   │   ├── mimic_raw_scale.csv   # 03 步：物理单位版 (用于统计描述)
-│   │   └── mimic_processed.csv   # 03 步：数值归一化版 (用于模型训练)
-│   └── external/                 # eICU 处理后的数据集
-│       ├── eicu_aligned.csv      # 09 步：完成单位换算与变量对齐
-│       └── eicu_processed.csv    # 09 步：使用 MIMIC Scaler 转换后的验证集
+│   ├── raw/                           # 原始数据快照 (Immutable)
+│   │   ├── mimic_raw_data.csv         # 01 步产出：含所有候选特征
+│   │   └── eicu_raw_data.csv          # 08 步产出：仅含选定特征的长表或宽表
+│   ├── cleaned/                       # MIMIC 开发集中间产物
+│   │   ├── mimic_raw_scale.csv        # 03 步产出：清洗后、未标准化的物理值
+│   │   └── mimic_processed.csv        # 03 步产出：标准化后的建模张量
+│   └── external/                      # eICU 验证集中间产物
+│       ├── eicu_aligned.csv           # 09 步产出：物理单位对齐后的数据
+│       └── eicu_processed.csv         # 09 步产出：应用 MIMIC 尺度变换后的数据
 │
-├── scripts/                      # 14 步标准化工作流核心脚本
-│   ├── 01_sql/                   # 01_mimic_extraction.sql, 08_eicu_extraction.sql
-│   ├── 02_preprocess/            # 02, 03, 09 步：清洗、标准化与跨库对齐
-│   ├── 03_modeling/              # 05, 06, 07 步：筛选、训练与截断值寻优
-│   └── 04_audit_eval/            # 04, 10-14 步：基线审计、验证与解释
+├── scripts/                           # 14 步标准化工作流 (Python/SQL)
+│   ├── 01_sql/                        # 数据库提取层
+│   │   ├── 01_mimic_extraction.sql
+│   │   └── 08_eicu_extraction.sql
+│   ├── 02_preprocess/                 # 特征工程层
+│   │   ├── 02_mimic_cleaning.py       # 核心：处理缺失值、异常值、生成字典
+│   │   ├── 03_mimic_standardization.py
+│   │   └── 09_eicu_alignment_cleaning.py
+│   ├── 03_modeling/                   # 模型竞赛层
+│   │   ├── 05_feature_selection_lasso.py
+│   │   ├── 06_model_training_main.py  # 训练 LR, XGB, LGBM, RF, MLP
+│   │   └── 07_optimal_cutoff_analysis.py
+│   └── 04_audit_eval/                 # 验证与统计层
+│       ├── 04_mimic_stat_audit.py     # 内部统计描述
+│       ├── 10_cross_cohort_audit.py   # Table 1 跨库基线对比
+│       ├── 11_external_validation_perf.py
+│       ├── 12_model_interpretation_shap.py
+│       ├── 13_clinical_calibration_dca.py
+│       └── 14_nomogram_odds_ratio.py
 │
-├── artifacts/                    # 全局共享资产与模型大脑
-│   ├── models/                   # 按结局(pof/mortality/composite)分类存放
-│   │   └── {outcome}/            # 包含 best_models.joblib & thresholds.json
-│   ├── scalers/                  # mimic_scaler.joblib (用于 eICU 尺度对齐)
-│   └── features/                 # 特征对齐中枢
-│       ├── feature_dictionary.json   # 定义字段含义、单位、eICU 映射关系
-│       └── selected_features.json    # 05 步生成，含模型入选特征及提取补丁
+├── artifacts/                         # 项目的大脑：跨脚本调用的资产
+│   ├── models/                        # 训练好的模型序列化文件
+│   │   ├── pof/                       # best_model_xgb.joblib, thresholds.json
+│   │   ├── mortality/                 # best_model_lr.joblib, thresholds.json
+│   │   └── composite/
+│   ├── scalers/                       # 标准化参数
+│   │   └── mimic_scaler.joblib        # 存放 Mean/Std 或 Min/Max
+│   └── features/                      # 特征管理配置
+│       ├── feature_dictionary.json    # 全集：变量定义、单位、跨库映射名
+│       └── selected_features.json     # 子集：LASSO 选出的特征提取指令
 │
-├── results/                      # 最终论文图表产出
-│   ├── tables/                   # Table 1-4, 性能对比表 (.csv)
-│   └── figures/                  # 按结局分目录存放 (AUC, SHAP, DCA, Nomogram)
-│       └── {outcome}/            
+├── results/                           # 产出层 (直接用于撰写论文)
+│   ├── tables/
+│   │   ├── table1_baseline.csv        # 跨库对比表
+│   │   ├── table2_stats_internal.csv  # 内部亚组分析表
+│   │   ├── model_performance_metrics.csv # 各模型 AUC, AUPRC, Sen, Spe
+│   │   └── odds_ratios.csv            # 逻辑回归 OR 值列表
+│   └── figures/                       # 高清图 (png/pdf/svg)
+│       ├── pof/                       # 文件夹：AUC_curve, Calibration_plot, DCA, SHAP_summary
+│       ├── mortality/
+│       └── composite/
 │
-├── logs/                         # 记录每步运行的时间戳与数据样本量变更
-└── requirements.txt              # 运行环境依赖 (Python 3.9+)
+├── logs/                              # 运行审计
+│   └── pipeline_run_20240520.log      # 记录样本流转、执行耗时、警告信息
+├── requirements.txt                   # 环境依赖 (如: scikit-learn==1.0.2, xgboost)
+└── README.md                          # 项目简述与运行指南
 
 ```
 
