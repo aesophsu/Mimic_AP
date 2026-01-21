@@ -37,14 +37,18 @@ for d in [SAVE_DIR, FIG_DIR]:
 # 辅助工具函数
 # =========================================================
 def get_auc_ci(model, X_test, y_test, n_bootstraps=1000):
-    """计算 AUC 的 95% 置信区间 (Bootstrap)"""
     scores = []
-    indices = np.arange(len(y_test))
+    # 确保 X_test 是 array
+    X_arr = np.array(X_test)
+    y_arr = np.array(y_test)
+    indices = np.arange(len(y_arr))
+    
     for i in range(n_bootstraps):
         resample_idx = resample(indices, random_state=i)
-        y_res = y_test.iloc[resample_idx]
+        y_res = y_arr[resample_idx]
         if len(np.unique(y_res)) < 2: continue
-        prob = model.predict_proba(X_test[resample_idx])[:, 1]
+        
+        prob = model.predict_proba(X_arr[resample_idx])[:, 1]
         scores.append(roc_auc_score(y_res, prob))
     sorted_scores = np.sort(scores)
     if len(sorted_scores) == 0: return 0, 0
@@ -74,12 +78,9 @@ def run_model_training_flow():
         X_train, X_test, y_train, y_test, _, sub_test = train_test_split(
             X, y, subgroup, test_size=0.2, random_state=42, stratify=y
         )
-
-        imputer = IterativeImputer(max_iter=10, random_state=42)
-        scaler = StandardScaler()
-        
-        X_train_imp = scaler.fit_transform(imputer.fit_transform(X_train))
-        X_test_imp = scaler.transform(imputer.transform(X_test))
+        imputer_pre = IterativeImputer(max_iter=10, random_state=42)
+        scaler_pre = StandardScaler()
+        X_train_pre = scaler_pre.fit_transform(imputer_pre.fit_transform(X_train))
 
         # 4. XGBoost Optuna 贝叶斯寻优
         print(f"🔬 启动 {target} 的 XGBoost 寻优...")
@@ -102,7 +103,7 @@ def run_model_training_flow():
         # 5. 模型竞赛 (含概率校准)
         models = {
             "Logistic Regression": LogisticRegression(class_weight='balanced', max_iter=1000),
-            "Random Forest": RandomForestClassifier(n_estimators=200, class_weight='balanced', random_state=42),
+            "Random Forest": RandomForestClassifier(n_estimators=200, max_depth=5, random_state=42, class_weight='balanced')
             "XGBoost": best_xgb,
             "SVM": SVC(probability=True, class_weight='balanced'),
             "Decision Tree": DecisionTreeClassifier(max_depth=5, class_weight='balanced')
@@ -118,19 +119,16 @@ def run_model_training_flow():
         for name, m in models.items():
             # 概率校准
             clf = CalibratedClassifierCV(m, cv=3, method='isotonic')
-            clf.fit(X_train_imp, y_train)
+            clf.fit(X_train_pre, y_train) 
             calibrated_results[name] = clf
-
-            # 全人群评估
-            y_prob = clf.predict_proba(X_test_imp)[:, 1]
-            auc_main = roc_auc_score(y_test, y_prob)
-            brier = brier_score_loss(y_test, y_prob)
-            low_m, high_m = get_auc_ci(clf, X_test_imp, y_test)
-            
-            # 亚组评估 (No-Renal)
+            X_test_pre = scaler_pre.transform(imputer_pre.transform(X_test)) # 严谨：用 train 的参数转 test
+            y_prob = clf.predict_proba(X_test_pre)[:, 1]
             sub_mask = (sub_test == 1).values
-            auc_sub = roc_auc_score(y_test[sub_mask], y_prob[sub_mask])
-            low_s, high_s = get_auc_ci(clf, X_test_imp[sub_mask], y_test[sub_mask])
+            if len(np.unique(y_test[sub_mask])) > 1:
+                auc_sub = roc_auc_score(y_test[sub_mask], y_prob[sub_mask])
+                low_s, high_s = get_auc_ci(clf, X_test_pre[sub_mask], y_test[sub_mask])
+            else:
+                auc_sub, low_s, high_s = 0, 0, 0
 
             main_auc_str = f"{auc_main:.3f} ({low_m:.3f}-{high_m:.3f})"
             sub_auc_str = f"{auc_sub:.3f} ({low_s:.3f}-{high_s:.3f})"
