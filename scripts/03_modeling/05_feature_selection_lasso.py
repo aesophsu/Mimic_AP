@@ -24,16 +24,19 @@ def run_lasso_selection_flow():
     """针对三种结局循环执行 LASSO 筛选并产出学术图表"""
     targets = ['pof', 'mortality_28d', 'composite_outcome']
     df = pd.read_csv(INPUT_PATH)
-    
-    # 汇总特征清单的字典
     all_outcomes_features = {}
-
+     
     for target in targets:
         print(f"\n{'='*20} 正在精炼特征结局: {target.upper()} {'='*20}")
         
         # 2. 数据准备：剔除所有结局标签及 ID 类字段
-        outcome_cols = ['pof', 'mortality_28d', 'composite_outcome', 'subgroup_no_renal']
-        X = df.drop(columns=[c for c in outcome_cols if c in df.columns])
+        outcomes = ['pof', 'mortality_28d', 'composite_outcome', 'subgroup_no_renal',
+                    'resp_pof', 'cv_pof', 'renal_pof']
+        scores = ['sofa_score', 'apsiii', 'sapsii', 'oasis', 'lods']
+        interventions = ['mechanical_vent_flag', 'vaso_flag']
+        admin_vars = ['los', 'stay_id', 'hadm_id', 'subject_id']
+        drop_cols = outcomes + scores + interventions + admin_vars
+        X = df.drop(columns=[c for c in drop_cols if c in df.columns])
         y = df[target]
         
         # 3. 执行 LassoCV 并计算 1-SE 准则
@@ -55,20 +58,43 @@ def run_lasso_selection_flow():
         # 5. 绘制学术级 LASSO 诊断图
         plot_academic_lasso(log_alphas, mse_mean, mse_se, idx_min, idx_1se, active_counts, target)
 
-        # 6. 特征提取 (根据 1-SE 准则选择非零系数)
-        # 如果 1-SE 选出的特征过多，此处可固定取绝对值最大的 Top 12
+        # 6. 特征提取与排序 (修正解包错误)
         coef_abs = np.abs(lasso.coef_)
-        # 使用 1-SE 索引对应的系数进行筛选，或直接取 Top 12 核心特征
         top_indices = np.argsort(coef_abs)[-12:] 
-        selected_features = X.columns[top_indices].tolist()
         
+        # 显式提取特征名和对应的系数值
+        selected_features = X.columns[top_indices].tolist()
+        selected_coefs = lasso.coef_[top_indices].tolist() # 转为列表
+        
+        # 组合并排序：确保 zip 生成的是 (feature_name, weight) 的二元组
+        feature_results = sorted(
+            zip(selected_features, selected_coefs), 
+            key=lambda x: abs(x[1]), 
+            reverse=True
+        )
+
+        print(f"\n✅ {target.upper()} 筛选完成 | 核心特征贡献度排行:")
+        print("-" * 65)
+        print(f"{'Rank':<5} | {'Feature Name':<25} | {'Weight':<10} | {'Impact'}")
+        print("-" * 65)
+
+        # 安全获取最大权重绝对值用于绘图
+        max_w = max([abs(w) for name, w in feature_results]) if feature_results else 1
+        
+        for idx, (f, w) in enumerate(feature_results, 1):
+            symbol = "▲ Risk" if w > 0 else "▼ Prot"
+            bar_len = int(abs(w) / max_w * 10)
+            bar = "█" * bar_len
+            print(f"{idx:02d}   | {f:<25} | {w:>10.4f} | {symbol:<7} {bar}")
+        
+        print("-" * 65)
+
         all_outcomes_features[target] = {
             "n_features": len(selected_features),
-            "features": selected_features
+            "features": [f for f, w in feature_results],
+            "weights": {f: round(float(w), 4) for f, w in feature_results}
         }
         
-        print(f"✅ {target} 筛选完成: 选定 {len(selected_features)} 个临床核心特征")
-
     # 7. 持久化特征指令集 (JSON)
     json_path = os.path.join(ARTIFACTS_DIR, "selected_features.json")
     with open(json_path, "w") as f:
