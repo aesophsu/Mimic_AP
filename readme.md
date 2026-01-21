@@ -50,55 +50,56 @@
 project_root/
 │
 ├── data/
-│   ├── raw/                      # 原始数据快照
-│   │   ├── mimic_raw_data.csv    # 01 步提取
-│   │   └── eicu_raw_data.csv     # 08 步后置提取
-│   ├── cleaned/                  # MIMIC 处理中间层
-│   │   ├── mimic_raw_scale.csv   # 03 步：用于 Table 2/3
-│   │   └── mimic_processed.csv   # 03 步：用于模型训练
-│   └── external/                 # eICU 处理中间层
-│       ├── eicu_aligned.csv      # 09 步：特征对齐后
-│       └── eicu_processed.csv    # 09 步：标准化后用于验证
+│   ├── raw/                      # 原始 SQL 提取快照 (只读)
+│   │   ├── mimic_raw_data.csv    # 01 步产出
+│   │   └── eicu_raw_data.csv     # 08 步产出 (仅含对齐后的特征)
+│   ├── cleaned/                  # MIMIC 处理后的数据集
+│   │   ├── mimic_raw_scale.csv   # 03 步：物理单位版 (用于统计描述)
+│   │   └── mimic_processed.csv   # 03 步：数值归一化版 (用于模型训练)
+│   └── external/                 # eICU 处理后的数据集
+│       ├── eicu_aligned.csv      # 09 步：完成单位换算与变量对齐
+│       └── eicu_processed.csv    # 09 步：使用 MIMIC Scaler 转换后的验证集
 │
-├── scripts/                      # 14 步核心脚本
-│   ├── 01_sql/                   # SQL 提取模块
+├── scripts/                      # 14 步标准化工作流
+│   ├── 01_sql/                   # 数据库提取模块
 │   │   ├── 01_mimic_extraction.sql
 │   │   └── 08_eicu_extraction.sql
-│   ├── 02_preprocess/            # 清洗与对齐模块
+│   ├── 02_preprocess/            # 数据清洗与对齐
 │   │   ├── 02_mimic_cleaning.py
 │   │   ├── 03_mimic_standardization.py
 │   │   └── 09_eicu_alignment_cleaning.py
-│   ├── 03_modeling/              # 训练与截断值审计
+│   ├── 03_modeling/              # 建模与阈值优化
 │   │   ├── 05_feature_selection_lasso.py
 │   │   ├── 06_model_training_main.py
-│   │   └── 07_optimal_cutoff_analysis.py  # 新增：截断值计算
-│   └── 04_audit_eval/            # 评价与解释模块
-│       ├── 04_mimic_stat_audit.py         # Table 2/3/4
-│       ├── 10_cross_cohort_audit.py       # Table 1
-│       ├── 11_external_validation_perf.py # 跨库效能
+│   │   └── 07_optimal_cutoff_analysis.py
+│   └── 04_audit_eval/            # 统计、验证与解释
+│       ├── 04_mimic_stat_audit.py
+│       ├── 10_cross_cohort_audit.py
+│       ├── 11_external_validation_perf.py
 │       ├── 12_model_interpretation_shap.py
 │       ├── 13_clinical_calibration_dca.py
 │       └── 14_nomogram_odds_ratio.py
 │
-├── artifacts/                    # 模型资产与持久化对象
-│   ├── models/                   # 针对不同结局保存子文件夹
-│   │   ├── pof_models/           # pof 结局的 5 大模型及 thresholds.json
-│   │   ├── mortality_models/
-│   │   └── composite_models/
-│   ├── scalers/                  # 标准化器 (03 步保存，09 步调用)
-│   │   └── mimic_scaler.joblib
-│   └── features/                 # 特征清单 (05 步保存，08 步 SQL 调用)
-│       └── selected_features.json
+├── artifacts/                    # 全局共享资产 (核心)
+│   ├── models/                   # 模型与截断值
+│   │   ├── pof/                  # 包含 pof_best_models.joblib & thresholds.json
+│   │   ├── mortality/
+│   │   └── composite/
+│   ├── scalers/                  # 预处理转换器
+│   │   └── mimic_scaler.joblib   # 确保 eICU 验证时使用相同的 Z-score/MinMax 参数
+│   └── features/                 # 特征对齐中枢
+│       ├── feature_dictionary.json   # 定义字段含义、单位、eICU 映射关系
+│       └── selected_features.json    # 05 步自动生成，存入最终入模特征
 │
-├── results/                      # 最终论文产出
-│   ├── tables/                   # Table 1-4, 性能指标表, OR值表
-│   └── figures/                  # 结局分文件夹存放
-│       ├── pof/                  # pof 相关的 AUC, SHAP, DCA
+├── results/                      # 论文图表产出
+│   ├── tables/                   # Table 1-4, 性能指标对比 CSV
+│   └── figures/                  # 可视化图片 (PDF/PNG)
+│       ├── pof/                  # POF 结局的 AUC, Calibration, DCA, SHAP
 │       ├── mortality/
 │       └── composite/
 │
-├── logs/                         # 训练日志与警告记录
-└── requirements.txt              # 依赖包列表
+├── logs/                         # 记录每步运行的时间戳与数据行数变更
+└── requirements.txt              # 环境依赖
 
 ```
 
