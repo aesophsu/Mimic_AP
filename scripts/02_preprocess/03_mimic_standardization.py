@@ -75,25 +75,41 @@ def run_mimic_standardization():
     print(f"✅ Table 1 & 2 已存至: {REPORT_DIR}")
 
     # =========================================================
-    # 4. 泄露防护与特征准备
+    # 4. 泄露防护与特征准备 (修正版)
     # =========================================================
+    # A. 定义不参与建模的 ID 与时间列
     drop_from_modeling = [
         'subject_id', 'hadm_id', 'stay_id', 'database', 
         'admittime', 'dischtime', 'intime', 'deathtime', 'dod',
         'early_death_24_48h', 'hosp_mortality'
     ]
-    df_model = df.drop(columns=[c for c in drop_from_modeling if c in df.columns])
     
-    # 强制剔除所有剩余的非数值列 (例如 race 等未映射的文本)
+    # B. 定义必须保持原始格式的列 (标签、子结局、亚组标记)
+    protected_cols = [
+        'pof', 'resp_pof', 'cv_pof', 'renal_pof', 
+        'mortality_28d', 'composite_outcome', 'subgroup_no_renal',
+        'gender', 'heart_failure', 'chronic_kidney_disease', 
+        'malignant_tumor', 'mechanical_vent_flag', 'vaso_flag'
+    ]
+    
+    df_model = df.drop(columns=[c for c in drop_from_modeling if c in df.columns])
+
+    # 强制将保护列转换为整数 (防止标准化污染)
+    for col in protected_cols:
+        if col in df_model.columns:
+            df_model[col] = df_model[col].fillna(0).astype(int)
+
+    # 强制剔除非数值列 (如 Race 等文本)
     remaining_text = df_model.select_dtypes(include=['object']).columns.tolist()
     if remaining_text:
-        print(f"⚠️ 警告: 强制剔除非数值列以防 LASSO 报错: {remaining_text}")
+        print(f"⚠️ 警告: 强制剔除非数值列以防报错: {remaining_text}")
         df_model = df_model.drop(columns=remaining_text)
         
-    # 确定需要预处理的数值列 (排除标签和二分类列)
-    binary_cols = outcome_cols + categorical
+    # C. 确定真正需要“数值处理”的特征 (排除保护列)
     numeric_features = [c for c in df_model.select_dtypes(include=[np.number]).columns 
-                        if c not in binary_cols]
+                        if c not in protected_cols]
+    
+    print(f"✅ 特征分类完成: 数值特征 {len(numeric_features)} 个, 保护列 {len(protected_cols)} 个")
 
     # =========================================================
     # 5. 🧪 核心增强：动态 Log1p 转换 (处理偏态)
@@ -103,46 +119,50 @@ def run_mimic_standardization():
                    'lactate_max', 'alt_max', 'ast_max', 'bilirubin_total_max']
     existing_skewed = [c for c in skewed_cols if c in numeric_features]
     
-    print(f"\n🔄 执行 Log1p 转换 (处理 {len(existing_skewed)} 个偏态指标)...")
+    print(f"🔄 执行 Log1p 转换 (处理 {len(existing_skewed)} 个偏态指标)...")
     for col in existing_skewed:
         df_model[col] = np.log1p(df_model[col].clip(lower=0))
     
-    # 保存偏态列清单，供 eICU 脚本复用
     joblib.dump(existing_skewed, SKEW_CONFIG_PATH)
 
     # =========================================================
-    # 6. 🧪 核心增强：MICE 多重插补
+    # 6. 🧪 核心增强：MICE 多重插补 (仅针对数值特征)
     # =========================================================
-    print("🧪 启动 MICE 多重插补 (链式方程)...")
-    # 使用中位数作为初始策略，更具鲁棒性
+    print("🧪 启动 MICE 多重插补 (仅处理 numeric_features)...")
     imputer = IterativeImputer(max_iter=10, random_state=42, initial_strategy='median')
-    df_model[numeric_features] = imputer.fit_transform(df_model[numeric_features])
     
-    # 保存 Imputer 资产
+    # 注意：只对数值列进行 fit 和 transform
+    df_model[numeric_features] = imputer.fit_transform(df_model[numeric_features])
     joblib.dump(imputer, IMPUTER_PATH)
 
     # =========================================================
-    # 7. ⚖️ Z-score 标准化
+    # 7. ⚖️ Z-score 标准化 (仅针对数值特征)
     # =========================================================
-    print("⚖️ 执行 Z-score 标准化并保存 Scaler...")
+    print("⚖️ 执行 Z-score 标准化 (排除标签和亚组列)...")
     scaler = StandardScaler()
-    df_model[numeric_features] = scaler.fit_transform(df_model[numeric_features])
     
-    # 保存 Scaler 资产
+    # 关键点：只标准化数值特征，protected_cols 保持原样
+    df_model[numeric_features] = scaler.fit_transform(df_model[numeric_features])
     joblib.dump(scaler, SCALER_PATH)
 
     # =========================================================
-    # 8. 持久化建模张量
+    # 8. 检查并保存
     # =========================================================
+    if 'subgroup_no_renal' in df_model.columns:
+        unique_vals = df_model['subgroup_no_renal'].unique()
+        print(f"🚩 最终亚组列状态检查: {unique_vals} (应为 [1 0] 或 [0 1])")
+    
+    print(f"\n📋 原始数据探测: {df.shape[0]} 行, {df.shape[1]} 列")
+    print(f"{'Feature Name':<25} | {'Missing%':<10} | {'Median':<10} | {'Mean':<10} | {'Max':<10}")
+    print("-" * 75)
+        
     processed_path = os.path.join(SAVE_DIR, "mimic_processed.csv")
-    df_model.to_csv(processed_path, index=False)
+    df_model.to_csv(processed_path, index=False)   
     
     print("-" * 70)
     print(f"✅ 模块 03 处理完成！")
-    print(f"  - 建模张量: {processed_path}")
-    print(f"  - 资产 1 (Scaler): {SCALER_PATH}")
-    print(f"  - 资产 2 (Imputer): {IMPUTER_PATH}")
-    print(f"  - 资产 3 (Skew Config): {SKEW_CONFIG_PATH}")
+    print(f"   - 建模张量: {processed_path}")
+    print(f"   - 标准化后的特征数: {len(numeric_features)}")
     print("-" * 70)
 
 if __name__ == "__main__":
