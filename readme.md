@@ -73,16 +73,16 @@ project_root/
 │   ├── 01_sql/                        # 数据库提取层 (提取 SQL)
 │   ├── 02_preprocess/                 # 特征工程层
 │   │   ├── 02_mimic_cleaning.py       # 物理清洗、字典对齐
-│   │   ├── 03_mimic_standardization.py # [重构] 剥离 Scaler、Log 转换、MICE 插补、保存持久化资产
+│   │   ├── 03_mimic_standardization.py # 剥离 Scaler、Log 转换、MICE 插补、保存持久化资产
 │   │   └── 09_eicu_alignment_cleaning.py
 │   ├── 03_modeling/                   # 模型竞赛层
-│   │   ├── 05_feature_selection_lasso.py # [新建] 执行 1-SE 准则、学术路径图、产出特征清单
-│   │   ├── 06_model_training_main.py  # [重构] 读取清单、Optuna 寻优、5 大模型竞赛、概率校准
+│   │   ├── 05_feature_selection_lasso.py # 执行 1-SE 准则、学术路径图、产出特征清单
+│   │   ├── 06_model_training_main.py  # 读取清单、Optuna 寻优、5 大模型竞赛、概率校准
 │   │   └── 07_optimal_cutoff_analysis.py # [规划] 计算 Youden Index 最佳截断值
 │   └── 04_audit_eval/                 # 验证与统计层
 │       ├── 04_mimic_stat_audit.py     # 深度描述统计、缺失值热图
 │       ├── 11_external_validation_perf.py 
-│       ├── 12_model_interpretation_shap.py # [新建] 针对精炼特征的全局/个体 SHAP 解释
+│       ├── 12_model_interpretation_shap.py # 针对精炼特征的全局/个体 SHAP 解释
 │       ├── 13_clinical_calibration_dca.py # 决策曲线分析 (DCA)
 │       └── 14_nomogram_odds_ratio.py      # 列线图与 OR 值导出
 │
