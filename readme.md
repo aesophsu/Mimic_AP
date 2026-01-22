@@ -69,6 +69,8 @@ project_root/
 │
 ├── scripts/                           # 14 步标准化工作流
 │   ├── 01_sql/                        # 数据库提取层 (提取 SQL)
+│   │   ├── 01_mimic_sql_extraction.sql
+│   │   ├── 08_eicu_sql_extraction.sql
 │   ├── 02_preprocess/                 # 特征工程层
 │   │   ├── 02_mimic_cleaning.py       # 物理清洗、字典对齐
 │   │   ├── 03_mimic_standardization.py # 剥离 Scaler、Log 转换、MICE 插补、保存持久化资产
