@@ -177,21 +177,40 @@ def run_model_training_flow():
         bundle = {'feature_order': X_train.columns.tolist(), 'target_outcome': target}
         joblib.dump(bundle, os.path.join(BASE_DIR, "artifacts/scalers/train_assets_bundle.pkl"))
 
-        # 提取多模型特征重要性
         importance_list = []
         for name in ["XGBoost", "Random Forest", "Logistic Regression"]:
             if name in calibrated_results:
-                raw_m = calibrated_results[name].base_estimator
-                weights = raw_m.coef_.flatten() if name == "Logistic Regression" else raw_m.feature_importances_
-                importance_list.append(pd.DataFrame({
-                    'feature': selected_features,
-                    'importance': weights,
-                    'algorithm': name
-                }))
+                clf_wrapper = calibrated_results[name]
+                if hasattr(clf_wrapper, "calibrated_classifiers_") and len(clf_wrapper.calibrated_classifiers_) > 0:
+                    cal_clf = clf_wrapper.calibrated_classifiers_[0]
+                    base_model = getattr(cal_clf, 'estimator', getattr(cal_clf, 'base_estimator', None))
+                else:
+                    base_model = getattr(clf_wrapper, 'estimator', getattr(clf_wrapper, 'base_estimator', None))
+                if base_model is None:
+                    print(f"⚠️ 无法从 {name} 中提取基础模型权重，跳过。")
+                    continue
+                try:
+                    if name == "Logistic Regression":
+                        if hasattr(base_model, "coef_"):
+                            weights = base_model.coef_.flatten()
+                        else:
+                            continue
+                    else:
+                        if hasattr(base_model, "feature_importances_"):
+                            weights = base_model.feature_importances_
+                        else:
+                            continue
+                    importance_list.append(pd.DataFrame({
+                        'feature': selected_features,
+                        'importance': weights,
+                        'algorithm': name
+                    }))
+                except Exception as e:
+                    print(f"⚠️ 提取 {name} 重要性时发生错误: {e}")
+        # 保存结果
         if importance_list:
             pd.concat(importance_list).to_csv(os.path.join(target_model_dir, "feature_importance.csv"), index=False)
 
-        # 保存评估快照
         eval_assets = {
             'X_test_pre': X_test_pre, 'y_test': y_test.values, 
             'sub_mask': sub_mask, 'feature_names': selected_features
