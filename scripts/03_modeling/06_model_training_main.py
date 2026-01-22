@@ -175,8 +175,7 @@ def run_model_training_flow():
         
         # 保存外部验证包
         bundle = {'feature_order': X_train.columns.tolist(), 'target_outcome': target}
-        joblib.dump(bundle, os.path.join(BASE_DIR, "artifacts/scalers/train_assets_bundle.pkl"))
-
+        joblib.dump(bundle, os.path.join(BASE_DIR, f"artifacts/scalers/train_assets_bundle_{target}.pkl"))
         importance_list = []
         for name in ["XGBoost", "Random Forest", "Logistic Regression"]:
             if name in calibrated_results:
