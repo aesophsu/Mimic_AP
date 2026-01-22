@@ -211,7 +211,7 @@ def run_model_training_flow():
             pd.concat(importance_list).to_csv(os.path.join(target_model_dir, "feature_importance.csv"), index=False)
 
         eval_assets = {
-            'X_test_pre': X_test_pre, 'y_test': y_test.values, 
+            'X_test_pre': X_test_df, 'y_test': y_test.values, 
             'sub_mask': sub_mask, 'feature_names': selected_features
         }
         joblib.dump(eval_assets, os.path.join(target_model_dir, "eval_data.pkl"))
