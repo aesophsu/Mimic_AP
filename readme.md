@@ -87,10 +87,29 @@ project_root/
 │       └── 14_nomogram_odds_ratio.py      # 列线图与 OR 值导出
 │
 ├── artifacts/                         # 项目的大脑：跨脚本调用的中枢资产
-│   ├── models/                        # 模型资产包
-│   │   ├── pof/                       # best_model.joblib, all_models_dict.pkl
-│   │   ├── mortality/
-│   │   └── composite/
+│   ├── models/                            # 06步
+│   │   ├── performance_report.csv         # 06步：所有结局/算法的汇总性能表
+│   │   ├── pof/                           # 06步：POF 结局专属资产
+│   │   │   ├── all_models_dict.pkl        # 包含 5 种校准后的模型字典
+│   │   │   ├── scaler.pkl                 # 针对 POF 特征子集的标准化器
+│   │   │   ├── imputer.pkl                # 针对 POF 特征子集的插补器
+│   │   │   ├── selected_features.json     # 该模型实际输入的特征清单
+│   │   │   ├── optuna_study.pkl           # XGBoost 参数寻优记录
+│   │   │   └── eval_data.pkl              # 测试集张量与亚组 Mask (用于后续统计)
+│   │   ├── mortality/                     # 06步：死亡结局专属资产
+│   │   │   ├── all_models_dict.pkl        # 包含 5 种校准后的模型字典
+│   │   │   ├── scaler.pkl                 # 针对 POF 特征子集的标准化器
+│   │   │   ├── imputer.pkl                # 针对 POF 特征子集的插补器
+│   │   │   ├── selected_features.json     # 该模型实际输入的特征清单
+│   │   │   ├── optuna_study.pkl           # XGBoost 参数寻优记录
+│   │   │   └── eval_data.pkl              # 测试集张量与亚组 Mask (用于后续统计)
+│   │   ├── composite/                     # 06步：复合结局专属资产
+│   │   │   ├── all_models_dict.pkl        # 包含 5 种校准后的模型字典
+│   │   │   ├── scaler.pkl                 # 针对 POF 特征子集的标准化器
+│   │   │   ├── imputer.pkl                # 针对 POF 特征子集的插补器
+│   │   │   ├── selected_features.json     # 该模型实际输入的特征清单
+│   │   │   ├── optuna_study.pkl           # XGBoost 参数寻优记录
+│   │   │   └── eval_data.pkl              # 测试集张量与亚组 Mask (用于后续统计)
 │   ├── scalers/                       # 尺度转换持久化文件 (核心！)
 │   │   ├── mimic_scaler.joblib        # 03 步保存的 StandardScaler
 │   │   ├── mimic_mice_imputer.joblib  # 03 步保存的 MICE Imputer
@@ -104,9 +123,15 @@ project_root/
 │   └── figures/                       # 高清科研插图 (png/pdf/svg)
 │       ├── audit/                     # 缺失值热图、亚组分布图
 │       ├── lasso/                     # 05 步：Lasso CV 路径图与 1-SE 诊断图
-│       ├── pof/                       # ROC, Calibration, DCA, SHAP (按结局分类)
-│       ├── mortality/
-│       └── composite/
+│       ├── pof/                           # 06步
+│       │   ├── ROC_Curve.png              # POF 结局多算法对比 ROC 图
+│       │   └── Calibration_Curve.png      # POF 结局校准曲线图
+│       ├── mortality/                     # 06步
+│       │   ├── ROC_Curve.png              # mortality 结局多算法对比 ROC 图
+│       │   └── Calibration_Curve.png      # mortality 结局校准曲线图
+│       └── composite/                     # 06步
+│       │   ├── ROC_Curve.png              # composite 结局多算法对比 ROC 图
+│       │   └── Calibration_Curve.png      # composite 结局校准曲线图
 │
 ├── logs/                              # 运行审计与 Optuna 寻优日志
 └── requirements.txt                   # 环境依赖 (shap, optuna, xgboost, tableone等)
