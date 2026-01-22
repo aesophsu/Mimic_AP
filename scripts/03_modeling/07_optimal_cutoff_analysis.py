@@ -129,8 +129,8 @@ def run_cutoff_optimization_flow():
 
         # 3. 模型遍历循环
         for name, clf in models_dict.items():
-            # 获取预测概率
-            y_prob = clf.predict_proba(X_test_pre.values)[:, 1]
+            X_eval = X_test_pre.values if hasattr(X_test_pre, 'values') else X_test_pre
+            y_prob = clf.predict_proba(X_eval)[:, 1]
             fpr, tpr, thresholds = roc_curve(y_test, y_prob)
             
             # 功能 2：Youden Index 寻优与异常处理
