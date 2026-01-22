@@ -129,11 +129,12 @@ def run_cutoff_optimization_flow():
 
         # 3. 模型遍历循环
         for name, clf in models_dict.items():
+            # 确保输入数据格式兼容 (处理 DataFrame 或 Numpy Array)
             X_eval = X_test_pre.values if hasattr(X_test_pre, 'values') else X_test_pre
             y_prob = clf.predict_proba(X_eval)[:, 1]
             fpr, tpr, thresholds = roc_curve(y_test, y_prob)
             
-            # 功能 2：Youden Index 寻优与异常处理
+            # 功能 2：Youden Index 寻优
             if len(thresholds) <= 1:
                 print(f"  ⚠️ 模型 {name} 预测无区分度，设置默认阈值 0.5")
                 best_th = 0.5
@@ -142,24 +143,39 @@ def run_cutoff_optimization_flow():
                 best_idx = np.argmax(youden_index)
                 best_th = float(thresholds[best_idx])
             
-            # 修正 sklearn 有时会生成阈值 > 1.0 的情况
+            # 阈值合法性修正
             if best_th > 1.0: best_th = 1.0
 
-            # 功能 3：全维度效能审计 (包含混淆矩阵计数)
-            perf = calculate_detailed_metrics(y_test, y_prob, best_th)
-            perf['Algorithm'] = name
-            target_perf_report.append(perf)
+            # --- 功能 3.1：全人群效能审计 ---
+            perf_main = calculate_detailed_metrics(y_test, y_prob, best_th)
+            perf_main['Algorithm'] = name
+            perf_main['Group'] = 'Full_Population'
+            target_perf_report.append(perf_main)
+            
+            # 记录该算法的最佳阈值（用于持久化保存）
             target_thresholds[name] = best_th
 
-            # 功能 5：可视化诊断图 (ROC + 概率分布)
+            # --- 功能 3.2：亚组效能审计 (利用 06 步的 sub_mask) ---
+            if 'sub_mask' in eval_data:
+                sub_mask = eval_data['sub_mask']
+                # 确保子集中包含两类标签，否则无法计算指标
+                if len(np.unique(y_test[sub_mask])) > 1:
+                    perf_sub = calculate_detailed_metrics(y_test[sub_mask], y_prob[sub_mask], best_th)
+                    perf_sub['Algorithm'] = name
+                    perf_sub['Group'] = 'No_Renal_Subgroup'
+                    target_perf_report.append(perf_sub)
+                else:
+                    print(f"  ⚠️ {name}: 亚组样本标签不足，跳过审计")
+
+            # 功能 5：可视化诊断图 (基于全人群的最佳阈值)
             plot_diagnostic_viz(y_test, y_prob, best_th, name, target, fig_save_dir)
 
-            # 记录到全局汇总清单
+            # 记录到全局汇总清单 (Table 3 的核心数据源)
             global_summary.append({
                 "Outcome": target,
                 "Algorithm": name,
                 "AUC": round(roc_auc_score(y_test, y_prob), 4),
-                **perf
+                **perf_main
             })
 
         # =========================================================
