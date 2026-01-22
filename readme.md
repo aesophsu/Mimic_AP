@@ -96,7 +96,9 @@ project_root/
 │   │   │   ├── imputer.pkl                # 06步：针对 POF 特征子集的插补器
 │   │   │   ├── selected_features.json     # 06步：该模型实际输入的特征清单
 │   │   │   ├── optuna_study.pkl           # 06步：XGBoost 参数寻优记录
-│   │   │   ├── eval_data.pkl              # 06步：测试集张量与亚组 Mask (用于后续统计)
+│   │   │   ├── eval_data.pkl              # 06 步：存入 X_test, y_test 和 subgroup_flag (No-Renal)
+│   │   │   ├── bootstrap_ci_stats.pkl   # 06 步：存入 Dict {'main': (low, high), 'sub': (low, high)}防止 07 步重复跑 Bootstrap，极大节省时间
+│   │   │   ├── feature_importance.csv   # 06 步产生：记录该结局下 5 大算法的特征权重排行
 │   │   │   ├── thresholds.json                # 07步：POF 最佳截断值资产
 │   │   │   └── internal_diagnostic_perf.csv   # 07步：POF 内部验证详细指标
 │   │   ├── mortality/
@@ -106,6 +108,8 @@ project_root/
 │   │   │   ├── selected_features.json     # 06步：该模型实际输入的特征清单
 │   │   │   ├── optuna_study.pkl           # 06步：XGBoost 参数寻优记录
 │   │   │   ├── eval_data.pkl              # 06步：测试集张量与亚组 Mask (用于后续统计)
+│   │   │   ├── bootstrap_ci_stats.pkl   # 06 步产生：存储全人群及“无肾损伤”亚组的 AUC 95% CI (Bootstrap 结果)
+│   │   │   ├── feature_importance.csv   # 06 步产生：记录该结局下 5 大算法的特征权重排行
 │   │   │   ├── thresholds.json                # 07步：死亡结局最佳截断值资产
 │   │   │   └── internal_diagnostic_perf.csv   # 07步：死亡结局内部验证详细指标
 │   │   ├── composite/
@@ -115,21 +119,29 @@ project_root/
 │   │   │   ├── selected_features.json     # 06步：该模型实际输入的特征清单
 │   │   │   ├── optuna_study.pkl           # 06步：XGBoost 参数寻优记录
 │   │   │   ├── eval_data.pkl              # 06步：测试集张量与亚组 Mask (用于后续统计)
+│   │   │   ├── bootstrap_ci_stats.pkl   # 06 步产生：存储全人群及“无肾损伤”亚组的 AUC 95% CI (Bootstrap 结果)
+│   │   │   ├── feature_importance.csv   # 06 步产生：记录该结局下 5 大算法的特征权重排行
 │   │   │   ├── thresholds.json                # 07步：复合结局最佳截断值资产
 │   │   │   └── internal_diagnostic_perf.csv   # 07步：复合结局内部验证详细指标
 │   ├── scalers/                       # 尺度转换持久化文件 (核心！)
 │   │   ├── mimic_scaler.joblib        # 03 步保存的 StandardScaler
 │   │   ├── mimic_mice_imputer.joblib  # 03 步保存的 MICE Imputer
-│   │   └── skewed_cols_config.pkl     # 记录需要进行 Log1p 转换的列名
-│   └── features/                      # 特征中枢配置
-│       ├── feature_dictionary.json    # 特征定义全集
-│       └── selected_features.json     # 05 步 LASSO 产出的 Top 12 精简清单
+│   │   ├── skewed_cols_config.pkl     # 记录需要进行 Log1p 转换的列名
+│   │   └── train_assets_bundle.pkl    # 06 步：【枢纽】存储训练集特征列名顺序（Column Order）确保 eICU 输入模型的特征列顺序与训练时 100% 一致
+│   │── features/                      # 特征中枢配置
+│   │   ├── feature_dictionary.json    # 特征定义全集
+│   │   └── selected_features.json     # 05 步 LASSO 产出的 Top 12 精简清单
+│   └── validation/                     # 专门存放 11 步外部验证的中间对比资产
+│       ├── eicu_vs_mimic_drift.json    # 由 10 步产生：记录人群偏移 (Population Drift) 的统计量
+│       └── external_perf_metrics.csv   # 由 11 步产生：eICU 盲测下的 AUC/Brier/Calibration 斜率
 │
 ├── results/                           # 产出层 (直接用于论文)
 │   ├── tables/                        # CSV 统计报表 (Table 1-4, OR表, 性能汇总)
 │   │   ├── Table3_Internal_Perf_pof.csv                # 07步
 │   │   ├── Table3_Internal_Perf_mortality_28d.csv      # 07步
-│   │   └── Table3_Internal_Perf_composite_outcome.csv  # 07步
+│   │   ├── Table3_Internal_Perf_composite_outcome.csv  # 07步
+│   │   ├── Table4_External_Perf_Summary.csv  # 11 步产生：eICU 验证集的效能总表 (直接入论文)
+│   │   └── Table_Subgroup_Analysis.csv       # 由 06/11 步产生：MIMIC 与 eICU 在 No-Renal 亚组下的稳健性对比
 │   └── figures/                       # 高清科研插图 (png/pdf/svg)
 │       ├── audit/                     # 缺失值热图、亚组分布图
 │       ├── lasso/                     # 05 步：Lasso CV 路径图与 1-SE 诊断图
@@ -145,6 +157,15 @@ project_root/
 │       │   ├── ROC_Curve.png              # composite 结局多算法对比 ROC 图
 │       │   ├── Calibration_Curve.png      # composite 结局校准曲线图
 │       │   └── 07_Diagnostic_Random Forest.png  # 07步：带 Cutoff 标注的 ROC 与分布图
+│       ├── comparison/                 # 用于跨库对比的图表
+│       │   ├── ROC_MIMIC_vs_eICU_{target}.png # 由 11 步产生：展示模型在两库间的迁移表现
+│       │   └── Calibration_External_{target}.png # 由 11 步产生：eICU 验证集的校准度观察图
+│       ├── interpretation/             # 模型解释度图表 (12 步)
+│       │   ├── SHAP_Summary_{target}.png    # 由 12 步产生：特征贡献全局排名图
+│       │   └── SHAP_Force_Plot_Sample.png   # 由 12 步产生：单个高风险病例的解释图
+│       └── clinical/                   # 临床应用转化图表 (13/14 步)
+│           ├── DCA_Benefit_Curve.png        # 由 13 步产生：决策曲线 (Decision Curve Analysis)
+│           └── Nomogram_Visualization.png   # 由 14 步产生：临床医生可用的诺莫图评分板
 │
 ├── logs/                              # 运行审计与 Optuna 寻优日志
 └── requirements.txt                   # 环境依赖 (shap, optuna, xgboost, tableone等)
