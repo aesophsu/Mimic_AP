@@ -29,7 +29,8 @@ INPUT_PATH = os.path.join(BASE_DIR, "data/cleaned/mimic_processed.csv")
 JSON_FEAT_PATH = os.path.join(BASE_DIR, "artifacts/features/selected_features.json")
 MODEL_ROOT = os.path.join(BASE_DIR, "artifacts/models")
 RESULT_ROOT = os.path.join(BASE_DIR, "results/figures")
-
+os.makedirs(os.path.join(BASE_DIR, "artifacts/scalers"), exist_ok=True)
+os.makedirs(os.path.join(BASE_DIR, "results/tables"), exist_ok=True)
 # =========================================================
 # 辅助工具函数
 # =========================================================
@@ -68,6 +69,7 @@ def run_model_training_flow():
         target_fig_dir = os.path.join(RESULT_ROOT, target.lower())
         for d in [target_model_dir, target_fig_dir]:
             os.makedirs(d, exist_ok=True)
+
         # 2. 准备该结局专属特征集
         selected_features = feature_config[target]['features']
         X = df[selected_features].copy()
@@ -97,8 +99,9 @@ def run_model_training_flow():
             return cross_val_score(model, X_train_pre, y_train, cv=cv, scoring='roc_auc').mean()
 
         study = optuna.create_study(direction='maximize')
-        study.optimize(objective, n_trials=30) # 生产环境建议 50-100
+        study.optimize(objective, n_trials=30) 
         best_xgb = XGBClassifier(**study.best_params, random_state=42)
+
         # 5. 模型竞赛 (含概率校准)
         models = {
             "Logistic Regression": LogisticRegression(class_weight='balanced', max_iter=1000),
@@ -110,19 +113,21 @@ def run_model_training_flow():
 
         calibrated_results = {}
         target_summary = []
-
+        all_ci_stats = {}  # 修正：初始化在结局循环内，模型循环外
+        
         print("\n" + "-"*95)
         print(f"{'Algorithm':<20} | {'Main AUC (95% CI)':<30} | {'Brier':<10}")
         print("-" * 95)
 
+        # 预处理测试集（仅一次）
+        X_test_pre = scaler_pre.transform(imputer_pre.transform(X_test))
+
         for name, m in models.items():
             # 概率校准
-            clf = CalibratedClassifierCV(m, cv=3, method='isotonic', n_jobs=-1)
+            clf = CalibratedClassifierCV(m, cv=3, method='isotonic', n_jobs=1)
             clf.fit(X_train_pre, y_train) 
             calibrated_results[name] = clf
             
-            # 生成测试集预处理数据
-            X_test_pre = scaler_pre.transform(imputer_pre.transform(X_test))
             y_prob = clf.predict_proba(X_test_pre)[:, 1]
 
             # --- 全人群评估 (Main) ---
@@ -138,9 +143,11 @@ def run_model_training_flow():
             else:
                 auc_sub, low_s, high_s = 0, 0, 0
 
+            # 收集打印信息与报表数据
             main_auc_str = f"{auc_main:.3f} ({low_m:.3f}-{high_m:.3f})"
             sub_auc_str = f"{auc_sub:.3f} ({low_s:.3f}-{high_s:.3f})"
             print(f"{name:<20} | {main_auc_str:<30} | {brier:.4f}")
+            
             target_summary.append({
                 "Outcome": target,
                 "Algorithm": name,
@@ -149,78 +156,60 @@ def run_model_training_flow():
                 "No-Renal AUC CI": sub_auc_str,
                 "Brier": round(brier, 4)
             })
-            all_ci_stats = {} # 循环外初始化
-            for name, m in models.items():
-                all_ci_stats[name] = {
-                    "main": [low_m, high_m],
-                    "sub": [low_s, high_s]
-                }
-            joblib.dump(all_ci_stats, os.path.join(target_model_dir, "bootstrap_ci_stats.pkl"))
+
+            # 收集 CI 数据
+            all_ci_stats[name] = {
+                "main": [float(low_m), float(high_m)],
+                "sub": [float(low_s), float(high_s)]
+            } 
 
         # =========================================================
-        # 6. 保存资产 (针对每个 Target 结局)
+        # 6. 保存资产 (在模型循环外统一保存该结局所有资产)
         # =========================================================
         print(f"💾 正在保存资产至: {target_model_dir}")
         
-        # 保存核心模型字典与预处理工具
         joblib.dump(calibrated_results, os.path.join(target_model_dir, "all_models_dict.pkl"))
         joblib.dump(scaler_pre, os.path.join(target_model_dir, "scaler.pkl"))
         joblib.dump(imputer_pre, os.path.join(target_model_dir, "imputer.pkl"))
+        joblib.dump(all_ci_stats, os.path.join(target_model_dir, "bootstrap_ci_stats.pkl"))
         
-        # 1. 保存外部验证对齐包 (覆盖式保存最后一个结局的特征顺序，或根据需要修改为特定结局)
-        bundle = {
-            'feature_order': X_train.columns.tolist(),
-            'target_outcome': target
-        }
+        # 保存外部验证包
+        bundle = {'feature_order': X_train.columns.tolist(), 'target_outcome': target}
         joblib.dump(bundle, os.path.join(BASE_DIR, "artifacts/scalers/train_assets_bundle.pkl"))
 
-        # 2. 保存结局专属特征清单
-        with open(os.path.join(target_model_dir, "selected_features.json"), 'w') as f:
-            json.dump(selected_features, f)
-            
-        # 3. 保存 Optuna 寻优记录
-        joblib.dump(study, os.path.join(target_model_dir, "optuna_study.pkl"))
-
-        # 4. 【核心修改】提取多模型特征重要性
+        # 提取多模型特征重要性
         importance_list = []
         for name in ["XGBoost", "Random Forest", "Logistic Regression"]:
             if name in calibrated_results:
                 raw_m = calibrated_results[name].base_estimator
                 weights = raw_m.coef_.flatten() if name == "Logistic Regression" else raw_m.feature_importances_
-                
                 importance_list.append(pd.DataFrame({
                     'feature': selected_features,
                     'importance': weights,
                     'algorithm': name
                 }))
-        
         if importance_list:
             pd.concat(importance_list).to_csv(os.path.join(target_model_dir, "feature_importance.csv"), index=False)
 
-        # 5. 【修复后】保存全算法 CI 资产
-        joblib.dump(all_ci_stats, os.path.join(target_model_dir, "bootstrap_ci_stats.pkl"))
-
-        # 6. 保存评估数据快照
+        # 保存评估快照
         eval_assets = {
-            'X_test_pre': X_test_pre, 
-            'y_test': y_test.values, 
-            'sub_mask': sub_mask,
-            'feature_names': selected_features # 建议多存一个特征名，防止后续画 SHAP 丢失列名
+            'X_test_pre': X_test_pre, 'y_test': y_test.values, 
+            'sub_mask': sub_mask, 'feature_names': selected_features
         }
         joblib.dump(eval_assets, os.path.join(target_model_dir, "eval_data.pkl"))
 
+        # 绘图与汇总
         plot_performance(calibrated_results, X_test_pre, y_test, target, target_fig_dir)
         global_performance.extend(target_summary)
 
-    # --- 循环外：汇总报表产出 ---
+    # --- 最终汇总 ---
     perf_df = pd.DataFrame(global_performance)
     perf_df.to_csv(os.path.join(MODEL_ROOT, "performance_report.csv"), index=False)
     
-    # 产出亚组稳健性分析表 (Table 1 的补充或 Table 3)
     subgroup_table = perf_df.sort_values("Main AUC", ascending=False).drop_duplicates("Outcome")
     subgroup_table.to_csv(os.path.join(BASE_DIR, "results/tables/Table_Subgroup_Analysis.csv"), index=False)
     
-    print(f"\n🚀 训练流程全部完成！报告已存至: {MODEL_ROOT}")
+    print(f"\n🚀 训练流程全部完成！")
 
 def plot_performance(models, X_test, y_test, target, save_path):
     """将 ROC 和 Calibration 曲线生成为两个独立的学术图片"""
