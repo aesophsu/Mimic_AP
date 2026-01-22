@@ -63,9 +63,9 @@ project_root/
 │   ├── cleaned/                       # MIMIC 开发集中间产物
 │   │   ├── mimic_raw_scale.csv        # 02 步产出：Log 转换前的物理尺度数据 (用于 Table 1)
 │   │   └── mimic_processed.csv        # 03 步产出：Log 转换 + MICE 插补 + 标准化后的张量
-│   └── external/                      # eICU 验证集中间产物
-│       ├── eicu_aligned.csv           # 09 步产出：物理单位对齐后的数据
-│       └── eicu_processed.csv         # 09 步产出：应用 MIMIC Scaler 变换后的建模数据
+│   └── external/                          # eICU 验证产物
+│       ├── eicu_aligned.csv               # [09步] 经过字典对齐、单位换算后的物理值
+│       └── eicu_processed_{target}.csv    # [09步] 应用对应结局 Scaler 后的标准数据
 │
 ├── scripts/                           # 14 步标准化工作流
 │   ├── 01_sql/                        # 数据库提取层 (提取 SQL)
