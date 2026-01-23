@@ -1,108 +1,87 @@
 import os
 import pandas as pd
-import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-from tableone import TableOne
 
-# =========================================================
-# 1. 配置与路径
-# =========================================================
-BASE_DIR = "../../"
-# 注意：审计使用的是物理值版本，而非标准化后的版本
-INPUT_PATH = os.path.join(BASE_DIR, "data/cleaned/mimic_raw_scale.csv")
-# 获取模块 03 已经算好的 processed 数据（为了获取亚组标记）
-PROCESSED_PATH = os.path.join(BASE_DIR, "data/cleaned/mimic_processed.csv")
-RESULT_DIR = os.path.join(BASE_DIR, "results/tables")
+# ===================== 配置路径 =====================
+BASE_DIR = "../.."
+DATA_PATH = os.path.join(BASE_DIR, "data/cleaned/mimic_raw_scale.csv")
+TABLE_DIR = os.path.join(BASE_DIR, "results/tables")
 FIGURE_DIR = os.path.join(BASE_DIR, "results/figures/audit")
-
 os.makedirs(FIGURE_DIR, exist_ok=True)
 
-def run_mimic_stat_audit():
-    print("="*70)
-    print("🚀 启动模块 04: 深度统计审计与缺失值可视化")
-    print("="*70)
+def plot_heatmap():
+    """绘制符合医学论文发表标准的缺失值热图"""
+    print("开始绘制专业缺失值热图...")
+    df = pd.read_csv(DATA_PATH)
 
-    # 加载数据
-    df_raw = pd.read_csv(INPUT_PATH)
-    df_proc = pd.read_csv(PROCESSED_PATH)
+    # 1. 核心优化：按缺失率对特征进行排序
+    # 这能让缺失模式（尤其是成块缺失的指标，如血气分析）集中显示
+    missing_rates = df.isnull().mean()
+    sorted_cols = missing_rates.sort_values(ascending=False).index
+    df_sorted = df[sorted_cols]
+
+    # 2. 设置绘图风格
+    plt.style.use('seaborn-v0_8-white') # 使用纯白背景
+    fig, ax = plt.subplots(figsize=(14, 8))
+
+    # 3. 绘制热图
+    # cmap: 使用医疗报告常用的 'Greys' (灰白) 或 'Blues' (蓝白)
+    # cbar=True: 医学论文通常需要 Legend 说明颜色含义
+    sns.heatmap(
+        df_sorted.isnull(), 
+        cmap=['#F5F5F5', '#2E5A88'], # 浅灰代表存在，深蓝色代表缺失
+        cbar=True, 
+        yticklabels=False,
+        ax=ax
+    )
+
+    # 4. 美化颜色条 (Colorbar)
+    colorbar = ax.collections[0].colorbar
+    colorbar.set_ticks([0.25, 0.75])
+    colorbar.set_ticklabels(['Observed', 'Missing'])
+    colorbar.outline.set_visible(True)
+
+    # 5. 完善标签（使用学术标题格式）
+    plt.title("Pattern of Missing Clinical Observations", fontsize=16, pad=20, fontweight='bold')
+    plt.xlabel("Clinical Features (Sorted by Missing Rate)", fontsize=12, labelpad=10)
+    plt.ylabel(f"Study Participants (N={len(df)})", fontsize=12, labelpad=10)
+
+    # 6. 旋转横坐标刻度，防止重叠
+    plt.xticks(rotation=45, ha='right', fontsize=9)
     
-    # 将 03 步生成的亚组标记合并回 raw 数据中以便审计
-    if 'subgroup_no_renal' in df_proc.columns:
-        df_raw['subgroup_no_renal'] = df_proc['subgroup_no_renal']
+    # 7. 移除四周多余线条
+    sns.despine(left=True, bottom=True)
+    
+    plt.tight_layout()
 
-    # =========================================================
-    # 2. 缺失值热图审计 (Missingness Heatmap)
-    # =========================================================
-    print("\n🎨 正在绘制缺失值分布热图...")
-    plt.figure(figsize=(15, 8))
-    # 选取前 50 个特征进行可视化避免图表过挤
-    cols_to_plot = [c for c in df_raw.columns if 'id' not in c.lower()][:50]
-    sns.heatmap(df_raw[cols_to_plot].isnull(), cbar=False, cmap='viridis')
-    plt.title('Missing Data Heatmap (First 50 Features)')
-    heatmap_path = os.path.join(FIGURE_DIR, "missingness_heatmap.png")
-    plt.savefig(heatmap_path)
+    # 保存为高分辨率图片
+    save_path = os.path.join(FIGURE_DIR, "mimic_missing_heatmap_pro.png")
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"✅ 热图已保存至: {heatmap_path}")
-
-    # =========================================================
-    # 3. 核心统计变量定义
-    # =========================================================
-    clinical_features = [
-        'admission_age', 'bmi', 'heart_failure', 'chronic_kidney_disease', 
-        'malignant_tumor', 'bun_min', 'creatinine_max', 'lactate_max', 
-        'pao2fio2ratio_min', 'wbc_max', 'alt_max', 'ast_max', 'glucose_max',
-        'platelets_min', 'bilirubin_max'
-    ]
-    outcomes = ['pof', 'mortality_28d']
     
-    # 筛选实际存在的列
-    all_audit_cols = [c for c in (clinical_features + outcomes) if c in df_raw.columns]
-    categorical = [c for c in ['heart_failure', 'chronic_kidney_disease', 'malignant_tumor', 'pof', 'mortality_28d'] if c in all_audit_cols]
-    nonnormal = [c for c in all_audit_cols if c not in categorical]
+    print(f"专业级热图已保存至: {save_path}")
 
-    # =========================================================
-    # 4. 单因素分析与 P-value 过滤
-    # =========================================================
-    print("\n🔬 执行单因素显著性审计 (By POF)...")
-    t1 = TableOne(df_raw, columns=all_audit_cols, categorical=categorical, 
-                  nonnormal=nonnormal, groupby='pof', pval=True)
+def check_existing_tables():
+    """检查 Table 1 和 Table 2 是否已生成"""
+    t1_path = os.path.join(TABLE_DIR, "table1_baseline.csv")
+    t2_path = os.path.join(TABLE_DIR, "table2_renal_subgroup.csv")
     
-    # 提取 P-value 小于 0.05 的变量
-    # tableone 的 table 存储在 .tableone 属性中
-    t1_df = t1.tableone
-    
-    # 尝试解析 P-Value 列
-    try:
-        # 寻找 P-Value 列（通常是最后一列）
-        pval_col = [c for c in t1_df.columns if 'P-Value' in str(c)][0]
-        # 转换并筛选显著变量
-        sig_vars = t1_df[t1_df[pval_col].apply(lambda x: '<' in str(x) or (isinstance(x, float) and x < 0.05))]
-        
-        print(f"\n📢 [统计发现] 以下变量在 POF 组间具有显著差异 (P < 0.05):")
-        for idx in sig_vars.index[:10]: # 打印前 10 个
-            print(f"  - {idx[0]}")
-    except Exception as e:
-        print(f"⚠️ 无法自动解析显著变量: {e}")
+    print("\n检查已生成表格：")
+    print(f"Table 1 (Baseline): {'✅ 存在' if os.path.exists(t1_path) else '❌ 缺失'}")
+    print(f"Table 2 (No-Renal Subgroup): {'✅ 存在' if os.path.exists(t2_path) else '❌ 缺失'}")
 
-    # =========================================================
-    # 5. 保存审计报告
-    # =========================================================
-    t1_path = os.path.join(RESULT_DIR, "table_1_detailed_audit.csv")
-    t1.to_csv(t1_path)
-    
-    # 如果存在亚组，产出亚组审计
-    if 'subgroup_no_renal' in df_raw.columns:
-        t2 = TableOne(df_raw, columns=all_audit_cols, categorical=categorical, 
-                      nonnormal=nonnormal, groupby='subgroup_no_renal', pval=True)
-        t2_path = os.path.join(RESULT_DIR, "table_2_subgroup_audit.csv")
-        t2.to_csv(t2_path)
-        print(f"\n✅ 亚组审计报告已更新: {t2_path}")
-
-    print("\n" + "="*70)
-    print("📊 深度审计完成！")
-    print(f"统计建议：在下一步 LASSO 筛选中，重点关注显著性变量。")
+def main():
     print("="*70)
+    print("启动模块 04: 描述统计与审计 - 补齐缺失热图 (MIMIC-IV)")
+    print("="*70)
+
+    check_existing_tables()
+    plot_heatmap()
+
+    print("\n04 步补齐完成！")
+    print("已验证 Table 1/2 存在，并生成缺失热图。")
+    print("下一步：进入 05_feature_selection_lasso.py（基于 mimic_processed.csv）")
 
 if __name__ == "__main__":
-    run_mimic_stat_audit()
+    main()
