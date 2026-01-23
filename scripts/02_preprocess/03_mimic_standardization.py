@@ -1,25 +1,20 @@
 import os
 import joblib
+import json
 import numpy as np
 import pandas as pd
 from tableone import TableOne
 from sklearn.preprocessing import StandardScaler
-from sklearn.experimental import enable_iterative_imputer  # 必须导入以启用 MICE
+from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 
-# =========================================================
-# 1. 配置与路径映射 (基于 v3.0 目录树)
-# =========================================================
 BASE_DIR = "../../"
 INPUT_PATH = os.path.join(BASE_DIR, "data/cleaned/mimic_raw_scale.csv")
 SAVE_DIR = os.path.join(BASE_DIR, "data/cleaned")
-
-# 资产持久化路径
 ARTIFACT_DIR = os.path.join(BASE_DIR, "artifacts/scalers")
 SCALER_PATH = os.path.join(ARTIFACT_DIR, "mimic_scaler.joblib")
 IMPUTER_PATH = os.path.join(ARTIFACT_DIR, "mimic_mice_imputer.joblib")
 SKEW_CONFIG_PATH = os.path.join(ARTIFACT_DIR, "skewed_cols_config.pkl")
-
 REPORT_DIR = os.path.join(BASE_DIR, "results/tables")
 
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -28,174 +23,169 @@ os.makedirs(REPORT_DIR, exist_ok=True)
 
 def run_mimic_standardization():
     print("="*70)
-    print("🚀 启动模块 03: 亚组划分、Log 转换、MICE 插补与标准化")
+    print("启动模块 03: Log 转换、MICE 插补与标准化 (MIMIC-IV)")
     print("="*70)
-    
+
     if not os.path.exists(INPUT_PATH):
-        print(f"❌ 错误: 找不到输入文件 {INPUT_PATH}")
+        print(f"输入文件不存在: {INPUT_PATH}")
         return
-    
+
+    try:
+        with open(os.path.join(BASE_DIR, "artifacts/features/feature_dictionary.json"), 'r', encoding='utf-8') as f:
+            feat_dict = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"特征字典读取失败: {e}")
+        return
+
     df = pd.read_csv(INPUT_PATH)
 
-    # =========================================================
-    # 2. 亚组划分 (Subgroup Definition) 保持不变
-    # =========================================================
+    # 1. 亚组标记
     if 'creatinine_max' in df.columns and 'chronic_kidney_disease' in df.columns:
         df['subgroup_no_renal'] = (
             (df['creatinine_max'] < 1.5) & (df['chronic_kidney_disease'] == 0)
         ).astype(int)
-        print(f"✅ 亚组标记完成: '无预存肾损伤' n = {df['subgroup_no_renal'].sum()}")
-        
-    # LASSO 不接受字符串，必须在此处转换
-    if 'gender' in df.columns:
-        # 定义全面的映射字典
-        gender_map = {
-            'M': 1, 'F': 0, 
-            'Male': 1, 'Female': 0, 
-            'MALE': 1, 'FEMALE': 0,
-            1: 1, 0: 0, 1.0: 1, 0.0: 0
-        }
-        df['gender'] = df['gender'].map(gender_map)
-        # 填充缺失性别（可选，通常建议中位数或删掉）
-        df['gender'] = df['gender'].fillna(df['gender'].mode()[0]).astype(int)
-        print("✅ 字段 'gender' 已完成归一化映射 (1:Male, 0:Female)")
 
-    # =========================================================
-    # 3. 📊 自动化统计分析 (Table 1 & 2) - 基于物理尺度
-    # =========================================================
+    # 2. gender 已由 02 步完成，这里保留仅作保险（可选删除）
+    if 'gender' in df.columns:
+        df['gender'] = df['gender'].replace(['M', 'Male', 'MALE', 1, 1.0], 1)\
+                                   .replace(['F', 'Female', 'FEMALE', 0, 0.0], 0)\
+                                   .fillna(df['gender'].mode()[0] if not df['gender'].dropna().empty else 0)\
+                                   .astype(int)
+
+    # 3. TableOne 基线表（物理尺度）
     clinical_features = [
-        'admission_age', 'bmi', 'heart_failure', 'chronic_kidney_disease', 
-        'malignant_tumor', 'bun_min', 'creatinine_max', 'lactate_max', 
-        'pao2fio2ratio_min', 'wbc_max', 'alt_max', 'ast_max'
+        'admission_age', 'weight_admit', 'gender',                    # 人口统计学
+        'sofa_score', 'apsiii', 'sapsii', 'oasis', 'lods',            # 严重程度评分 (全套)
+        'heart_failure', 'chronic_kidney_disease', 'malignant_tumor', # 共病 (既往史)
+        'mechanical_vent_flag', 'vaso_flag',                          # 治疗干预 (Flag)
+        'wbc_max', 'hemoglobin_min', 'platelets_min',                 # 血常规
+        'bun_max', 'creatinine_max', 'bilirubin_total_max',           # 肾功能与肝功能
+        'alt_max', 'ast_max', 'alp_max',                              # 肝损害指标
+        'lactate_max', 'pao2fio2ratio_min', 'spo2_min', 'ph_min',     # 灌注、呼吸与酸碱
+        'sodium_max', 'potassium_max', 'bicarbonate_min'              # 电解质与代谢
     ]
-    outcome_cols = ['pof', 'mortality_28d', 'composite_outcome']
+    outcome_cols = ['pof', 'mortality', 'composite', 'subgroup_no_renal']
     cols_for_table = [c for c in (clinical_features + outcome_cols) if c in df.columns]
-    categorical = [c for c in ['heart_failure', 'chronic_kidney_disease', 'malignant_tumor', 
-                               'mortality_28d', 'composite_outcome', 'subgroup_no_renal'] if c in cols_for_table]
+    categorical = [
+        c for c in [
+            'gender', 'heart_failure', 'chronic_kidney_disease', 'malignant_tumor',
+            'mechanical_vent_flag', 'vaso_flag', 'mortality', 'composite', 
+            'subgroup_no_renal'
+        ] if c in cols_for_table
+    ]
     nonnormal = [c for c in cols_for_table if c not in categorical]
 
-    print("\n📊 正在生成统计报告 (物理尺度)...")
-    t1 = TableOne(df, columns=cols_for_table, categorical=categorical, nonnormal=nonnormal, groupby='pof', pval=True)
+    t1 = TableOne(df, columns=cols_for_table, categorical=categorical, nonnormal=nonnormal, groupby='pof', pval=True, htest_name=True)
     t1.to_csv(os.path.join(REPORT_DIR, "table1_baseline.csv"))
-    
-    if 'subgroup_no_renal' in df.columns:
-        t2 = TableOne(df, columns=cols_for_table, categorical=categorical, nonnormal=nonnormal, groupby='subgroup_no_renal', pval=True)
-        t2.to_csv(os.path.join(REPORT_DIR, "table2_renal_subgroup.csv"))
-    print(f"✅ Table 1 & 2 已存至: {REPORT_DIR}")
 
-    # =========================================================
-    # 4. 泄露防护与特征准备 (修正版)
-    # =========================================================
-    # A. 定义不参与建模的 ID 与时间列
+    if 'subgroup_no_renal' in df.columns:
+        cols_for_t2 = [c for c in cols_for_table if c != 'subgroup_no_renal']
+        cat_for_t2 = [c for c in categorical if c != 'subgroup_no_renal']
+        nonnormal_for_t2 = [c for c in nonnormal if c != 'subgroup_no_renal']
+
+        t2 = TableOne(df, columns=cols_for_t2, categorical=cat_for_t2, nonnormal=nonnormal_for_t2, groupby='subgroup_no_renal', pval=True)
+        t2.to_csv(os.path.join(REPORT_DIR, "table2_renal_subgroup.csv"))
+    
+    print(f"{'Feature Name':<25} | {'Missing%':<10} | {'Median':<10} | {'Mean':<10} | {'Max':<10}")
+    for col in df.columns:
+        if pd.api.types.is_numeric_dtype(df[col]):
+            series = df[col].dropna()
+            missing = df[col].isnull().mean() * 100
+            med = series.median() if not series.empty else 0
+            mean = series.mean() if not series.empty else 0
+            v_max = series.max() if not series.empty else 0
+            print(f"{col:<25} | {missing:>8.2f}% | {med:>10.2f} | {mean:>10.2f} | {v_max:>10.2f}")
+
     drop_from_modeling = [
-        'subject_id', 'hadm_id', 'stay_id', 'database', 
+        'subject_id', 'hadm_id', 'stay_id', 
         'admittime', 'dischtime', 'intime', 'deathtime', 'dod',
-        'early_death_24_48h', 'hosp_mortality'
+        'early_death_24_48h', 'hosp_mortality', 'los'
     ]
     
-    # B. 定义必须保持原始格式的列 (标签、子结局、亚组标记)
     protected_cols = [
         'pof', 'resp_pof', 'cv_pof', 'renal_pof', 
-        'mortality_28d', 'composite_outcome', 'subgroup_no_renal',
+        'mortality', 'composite', 'subgroup_no_renal',
         'gender', 'heart_failure', 'chronic_kidney_disease', 
         'malignant_tumor', 'mechanical_vent_flag', 'vaso_flag'
     ]
-    
-    df_model = df.drop(columns=[c for c in drop_from_modeling if c in df.columns])
 
-    # 强制将保护列转换为整数 (防止标准化污染)
+    df_model = df.drop(columns=[c for c in drop_from_modeling if c in df.columns])
     for col in protected_cols:
         if col in df_model.columns:
             df_model[col] = df_model[col].fillna(0).astype(int)
 
-    # 强制剔除非数值列 (如 Race 等文本)
     remaining_text = df_model.select_dtypes(include=['object']).columns.tolist()
     if remaining_text:
-        print(f"⚠️ 警告: 强制剔除非数值列以防报错: {remaining_text}")
         df_model = df_model.drop(columns=remaining_text)
-        
-    # C. 确定真正需要“数值处理”的特征 (排除保护列)
-    numeric_features = [c for c in df_model.select_dtypes(include=[np.number]).columns 
+
+    numeric_features = [c for c in df_model.select_dtypes(include=[np.number]).columns
                         if c not in protected_cols]
-    
-    print(f"✅ 特征分类完成: 数值特征 {len(numeric_features)} 个, 保护列 {len(protected_cols)} 个")
 
-    # =========================================================
-    # 5. 🧪 核心增强：动态 Log1p 转换 (处理偏态)
-    # =========================================================
-    skewed_cols = ['creatinine_max', 'creatinine_min', 'bun_max', 'bun_min',
-                   'wbc_max', 'wbc_min', 'glucose_max', 'glucose_min',
-                   'lactate_max', 'alt_max', 'ast_max', 'bilirubin_total_max']
-    existing_skewed = [c for c in skewed_cols if c in numeric_features]
-    
-    print(f"🔄 执行 Log1p 转换 (处理 {len(existing_skewed)} 个偏态指标)...")
-    for col in existing_skewed:
-        df_model[col] = np.log1p(df_model[col].clip(lower=0))
-    
-    joblib.dump(existing_skewed, SKEW_CONFIG_PATH)
+    skewed_cols = [
+        col for col in numeric_features
+        if col in feat_dict and feat_dict[col].get("needs_log_transform", False)
+    ]
 
-    # =========================================================
-    # 6. 🧪 核心增强：MICE 多重插补 (仅针对数值特征)
-    # =========================================================
-    print("🧪 启动 MICE 多重插补 (仅处理 numeric_features)...")
-    imputer = IterativeImputer(max_iter=10, random_state=42, initial_strategy='median')
-    
-    # 注意：只对数值列进行 fit 和 transform
+    if skewed_cols:
+        print(f"\n对以下 {len(skewed_cols)} 个特征应用 log1p（保留 NaN 让 MICE 处理）：")
+        print(", ".join(skewed_cols))
+        for col in skewed_cols:
+            df_model[col] = np.log1p(df_model[col].clip(lower=0))
+
+    joblib.dump(skewed_cols, SKEW_CONFIG_PATH)
+
+    raw_medians = df_model[numeric_features].median().to_dict()  # Log 后、标准化前的中位数
+
+    # ==================== MICE 插补 ====================
+    print("\n开始 MICE 多重插补（将在 Log 空间进行）...")
+    imputer = IterativeImputer(max_iter=15, random_state=42, verbose=2)
     df_model[numeric_features] = imputer.fit_transform(df_model[numeric_features])
+    print(f"MICE 完成，实际迭代次数：{imputer.n_iter_}")
     joblib.dump(imputer, IMPUTER_PATH)
 
-    # =========================================================
-    # 7. ⚖️ Z-score 标准化 (仅针对数值特征)
-    # =========================================================
-    # =========================================================
-    # 7. ⚖️ Z-score 标准化
-    # =========================================================
-    print("⚖️ 执行 Z-score 标准化...")
+    # ==================== 标准化 ====================
+    print("开始标准化（StandardScaler）...")
     scaler = StandardScaler()
-    
-    # 修复点：强制转换为 DataFrame 以保持特征名，虽然 StandardScaler 本身不存，
-    # 但我们要在 bundle 中手动建立列名映射。
     df_model[numeric_features] = scaler.fit_transform(df_model[numeric_features])
     joblib.dump(scaler, SCALER_PATH)
 
-    # =========================================================
-    # 8. 📦 【关键新增】: 生成并保存训练资产束 (Artifact Bundle)
-    # =========================================================
-    print("\n📦 正在构建训练资产束 (用于跨库对齐)...")
-    
-    # 计算物理尺度下的中位数（在 df 上计算，而不是 df_model）
-    # 这是为了给 eICU 提供真实的物理参考
-    mimic_medians = df[numeric_features].median().to_dict()
-    
-    # 构建资产字典
+    # ==================== 打包训练资产 ====================
     train_assets = {
-        'skewed_cols': existing_skewed,      # 哪些列做了 Log1p
-        'medians': mimic_medians,            # 物理中位数 (纠错关键)
-        'feature_order': numeric_features,   # 训练时的特征绝对顺序
+        'skewed_cols': skewed_cols,
+        'medians': raw_medians,        # Log 后、标准化前的真实中位数（最实用）
+        'feature_order': numeric_features,
         'n_samples': len(df)
     }
-    
-    BUNDLE_PATH = os.path.join(ARTIFACT_DIR, "train_assets_bundle.pkl")
-    joblib.dump(train_assets, BUNDLE_PATH)
-    
-    # --- DEBUG 增强输出 ---
-    print("-" * 30)
-    print(f"✅ 资产束已持久化: {BUNDLE_PATH}")
-    print(f"📊 抽样核查 (MIMIC 物理中位数):")
-    for check_f in ['admission_age', 'creatinine_max', 'ph_min']:
-        if check_f in mimic_medians:
-            print(f"   - {check_f:<15}: {mimic_medians[check_f]:.4f}")
-    print("-" * 30)
+    bundle_path = os.path.join(ARTIFACT_DIR, "train_assets_bundle.pkl")
+    joblib.dump(train_assets, bundle_path)
 
-    # =========================================================
-    # 9. 检查并保存
-    # =========================================================
-    # ... 原有的保存代码 ...
+    # ==================== 保存最终张量 ====================
     processed_path = os.path.join(SAVE_DIR, "mimic_processed.csv")
-    df_model.to_csv(processed_path, index=False)   
+    df_model.to_csv(processed_path, index=False)
+
+
+    # ==================== 控制台输出检查 (Audit) ====================
+    print("\n" + "="*20 + " 产物正确性核查 " + "="*20)
     
-    print(f"✅ 模块 03 处理完成！建模张量维度: {df_model.shape}")
-    print("-" * 70)
+    # 检查文件物理存在
+    artifacts = {
+        "Skew Config": SKEW_CONFIG_PATH,
+        "MICE Imputer": IMPUTER_PATH,
+        "Standard Scaler": SCALER_PATH,
+        "Asset Bundle": bundle_path,
+        "Processed Data": processed_path
+    }
+    for name, path in artifacts.items():
+        status = "✅ 存在" if os.path.exists(path) else "❌ 缺失"
+        size = f"{os.path.getsize(path)/1024:.1f} KB" if os.path.exists(path) else "N/A"
+        print(f"{name:<20} : {status:<5} | 大小: {size}")
+
+    print(f"\n最终建模特征数：{len(numeric_features)} (数值特征)")
+    print(f"建模张量维度: {df_model.shape}")
+    print(f"已生成中间产物: {processed_path}")
+    print(f"已保存核心资产至: {ARTIFACT_DIR}")
+    print("\n03 步完成！可以进入 04_mimic_stat_audit.py 或 05_feature_selection_lasso.py")
+    print("-"*70)
 
 if __name__ == "__main__":
     run_mimic_standardization()
