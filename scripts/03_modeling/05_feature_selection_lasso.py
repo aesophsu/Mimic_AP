@@ -5,6 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LogisticRegressionCV
 from sklearn.model_selection import StratifiedKFold
+from sklearn.linear_model import LogisticRegression
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -47,36 +48,68 @@ def plot_academic_lasso(cv_model, X_columns, target):
     plt.tight_layout()
     plt.savefig(os.path.join(FIG_DIR, f"lasso_diag_{target}.png"), bbox_inches='tight')
     plt.close()
+    
+def plot_feature_importance(features, weights, target):
+    if not features:
+        return
 
-def plot_lasso_trajectories(X, y, target):
-    print(f"正在计算 {target.upper()} 的系数路径...")
-    alphas, coefs, _ = logistic_regression_path(
-        X.values, y, pos_class=1, Cs=100, l1_ratio=1.0, 
-        fit_intercept=True, penalty='l1', solver='liblinear'
-    )
-    log_Cs_path = np.log10(1 / (alphas * X.shape[0]))
-    path_coefs = coefs[0] 
-    plt.figure(figsize=(10, 7), dpi=300)
-    final_coefs = path_coefs[-1, :]
-    important_idx = np.argsort(np.abs(final_coefs))[-12:]
-    for i in range(path_coefs.shape[1]):
-        if i in important_idx:
-            plt.plot(log_Cs_path, path_coefs[:, i], label=X.columns[i], linewidth=1.5)
-        else:
-            plt.plot(log_Cs_path, path_coefs[:, i], color='gray', alpha=0.2, linewidth=0.5)
-    plt.axhline(0, color='black', lw=1, ls='-')
-    plt.xlabel(r'$\log_{10}(C)$')
-    plt.ylabel('Coefficients')
-    plt.title(f'LASSO Path: {target.upper()}', fontweight='bold')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8, title="Top Features")
-    plt.grid(axis='y', alpha=0.3)
+    features = np.array(features)
+    weights = np.array(weights)
+    sorted_idx = np.argsort(np.abs(weights))
+    
+    # 1. 字体与画布设置：使用无衬线字体，增加边距
+    plt.rcParams['font.sans-serif'] = ['Arial']
+    plt.rcParams['axes.unicode_minus'] = False
+    fig, ax = plt.subplots(figsize=(8, 10 * (len(features)/15)), dpi=300)
+
+    # 2. 颜色选择：医学论文经典的“低饱和度红蓝”
+    # 红色 (#d62728): 危险因素/正相关; 蓝色 (#1f77b4): 保护因素/负相关
+    colors = ['#d62728' if w > 0 else '#1f77b4' for w in weights[sorted_idx]]
+    
+    # 3. 绘图：减小条形高度 (height) 使其看起来更精致
+    bars = ax.barh(range(len(features)), weights[sorted_idx], color=colors, 
+                   edgecolor='white', linewidth=0.5, height=0.7)
+    
+    # 4. 坐标轴美化
+    ax.set_yticks(range(len(features)))
+    ax.set_yticklabels(features[sorted_idx], fontsize=10, fontweight='medium')
+    ax.axvline(0, color='black', lw=1.2, zorder=3) # 加粗零线
+    
+    # 5. 移除上方和右方的边框 (Spines)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_position(('outward', 5)) # 让 Y 轴稍微离开条形
+    
+    # 6. 数据标注：更精细的控制
+    for bar in bars:
+        width = bar.get_width()
+        ax.annotate(f'{width:.3f}',
+                    xy=(width, bar.get_y() + bar.get_height() / 2),
+                    xytext=(5 if width > 0 else -5, 0),
+                    textcoords="offset points",
+                    ha='left' if width > 0 else 'right', 
+                    va='center', fontsize=9, fontweight='bold',
+                    color=bar.get_facecolor())
+
+    # 7. 标签与标题
+    ax.set_xlabel('Regression Coefficient (Standardized)', fontsize=11, fontweight='bold')
+    # 标题通常在论文中通过 Figure Legend 描述，图内标题建议简洁
+    ax.set_title(f'Predictors for {target.upper()}', loc='left', 
+                 fontsize=14, fontweight='bold', pad=20)
+    
+    # 添加轻微的垂直网格线
+    ax.grid(axis='x', linestyle='--', alpha=0.4, zorder=0)
+
     plt.tight_layout()
-    plt.savefig(os.path.join(FIG_DIR, f"lasso_traj_{target}.png"), bbox_inches='tight')
+    plt.savefig(os.path.join(FIG_DIR, f"lasso_importance_{target}.png"), 
+                bbox_inches='tight', transparent=False, facecolor='white')
     plt.close()
 
+    
 def run_lasso_selection_flow():
     targets = ['pof', 'mortality', 'composite']
     df = pd.read_csv(INPUT_PATH)
+
     protected = ['pof', 'mortality', 'composite', 'subgroup_no_renal',
                  'resp_pof', 'cv_pof', 'renal_pof',
                  'sofa_score', 'apsiii', 'sapsii', 'oasis', 'lods',
@@ -90,55 +123,82 @@ def run_lasso_selection_flow():
         print("⚠️ 警告: 检测到特征均值显著偏离0，请确认是否已运行 03_standardization.py")
     else:
         print("✅ 审计通过: 特征尺度已对齐")
+
     all_outcomes_features = {}
+
     for target in targets:
         print(f"\n>>> 正在精炼: {target.upper()}")
         TARGET_ARTIFACTS = os.path.join(MODELS_ARTIFACTS_DIR, target)
         os.makedirs(TARGET_ARTIFACTS, exist_ok=True)
+
         X = df[X_cols]
         y = df[target].values
+
+        # 结局类别审计
         classes = np.unique(y)
         print(f"📊 [结局审计] 类别分布: {classes}, 阳性样本数: {sum(y==1)}")
         if len(classes) != 2:
             print(f"❌ 错误: {target} 不是二分类结局，跳过。")
             continue
+
         lasso_cv = LogisticRegressionCV(
             Cs=100, cv=StratifiedKFold(n_splits=10, shuffle=True, random_state=42),
             penalty='l1', solver='liblinear', scoring='roc_auc',
-            random_state=42, max_iter=1000, n_jobs=-1
+            random_state=42, max_iter=1000, n_jobs=1
         )
         lasso_cv.fit(X, y)
-        scores_mean = lasso_cv.scores_[1].mean(axis=0)
-        scores_se = lasso_cv.scores_[1].std(axis=0) / np.sqrt(10)
+
+        # 1-SE 准则
+        pos_class = 1
+        scores_mean = lasso_cv.scores_[pos_class].mean(axis=0)
+        scores_se = lasso_cv.scores_[pos_class].std(axis=0) / np.sqrt(lasso_cv.scores_[pos_class].shape[0])
         idx_max = np.argmax(scores_mean)
         target_score = scores_mean[idx_max] - scores_se[idx_max]
-        eligible_idx = np.where(scores_mean >= target_score)[0]
-        idx_1se = eligible_idx[np.argmin(lasso_cv.Cs_[eligible_idx])]
-        best_C = lasso_cv.C_[0]
-        coef = lasso_cv.coef_[0]
+        eligible_indices = np.where(scores_mean >= target_score)[0]
+        idx_1se = eligible_indices[np.argmin(lasso_cv.Cs_[eligible_indices])]
+        best_C_1se = lasso_cv.Cs_[idx_1se]
+
+        # 严格遵守 1-SE: 使用 best_C_1se 重新 fit 模型获取 coef
+
+        final_lasso = LogisticRegression(
+            C=best_C_1se, penalty='l1', solver='liblinear',
+            random_state=42, max_iter=1000
+        )
+        final_lasso.fit(X, y)
+        coef = final_lasso.coef_[0]
+
         selected_idx = np.where(coef != 0)[0]
         selected_features = X.columns[selected_idx].tolist()
+
         if len(selected_features) > 12:
             coef_abs = np.abs(coef[selected_idx])
-            top_idx_relative = np.argsort(coef_abs)[-12:]
-            selected_features = [selected_features[i] for i in top_idx_relative]
+            top_idx = np.argsort(coef_abs)[-12:]
+            selected_features = [selected_features[i] for i in top_idx]
+
+        # 可视化
         plot_academic_lasso(lasso_cv, X.columns, target)
-        plot_lasso_trajectories(X, y, target)
+        plot_feature_importance(selected_features, [all_outcomes_features[target]["weights"][f] for f in selected_features], target)
+
         all_outcomes_features[target] = {
             "n_features": len(selected_features),
             "features": selected_features,
             "weights": {f: round(float(coef[X.columns.get_loc(f)]), 4) for f in selected_features},
-            "best_C": float(best_C),
-            "best_lambda": float(1/best_C)
+            "best_C": float(best_C_1se),
+            "best_lambda": float(1 / best_C_1se)
         }
-        print(f"🎯 选定特征: {selected_features}")
-        individual_path = os.path.join(TARGET_ARTIFACTS, "selected_features.json")
-        with open(individual_path, "w") as f:
-            json.dump(all_outcomes_features[target], f, indent=4)
+
+        print(f"🎯 选定特征 ({len(selected_features)} 个): {', '.join(selected_features)}")
+
+        # 独立保存
+        with open(os.path.join(TARGET_ARTIFACTS, "selected_features.json"), "w", encoding='utf-8') as f:
+            json.dump(all_outcomes_features[target], f, ensure_ascii=False, indent=4)
+
+    # 全局保存
     selected_path = os.path.join(ARTIFACTS_DIR, "selected_features.json")
     with open(selected_path, "w", encoding='utf-8') as f:
         json.dump(all_outcomes_features, f, ensure_ascii=False, indent=4)
-    print(f"\n📂 资产已固化至: {selected_path}")
+
+    print(f"\n📂 全局特征清单已固化至: {selected_path}")
     print("下一步：进入 06_model_training_main.py")
 
 if __name__ == "__main__":
