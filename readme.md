@@ -72,6 +72,7 @@ project_root/
 │   │   └── 07_optimal_cutoff_analysis.py # [规划] 计算 Youden Index 最佳截断值
 │   └── 04_audit_eval/                 # 验证与统计层
 │       ├── 04_mimic_stat_audit.py     # 深度描述统计、缺失值热图
+│       ├── 10_cross_cohort_audit.py
 │       ├── 11_external_validation_perf.py 
 │       ├── 12_model_interpretation_shap.py # 针对精炼特征的全局/个体 SHAP 解释
 │       ├── 13_clinical_calibration_dca.py # 决策曲线分析 (DCA)
