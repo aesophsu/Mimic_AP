@@ -47,9 +47,18 @@ def run_mimic_standardization():
         print(f"✅ 亚组标记完成: '无预存肾损伤' n = {df['subgroup_no_renal'].sum()}")
         
     # LASSO 不接受字符串，必须在此处转换
-    if 'gender' in df.columns and df['gender'].dtype == 'object':
-        df['gender'] = df['gender'].map({'M': 1, 'F': 0})
-        print("✅ 字段 'gender' 已完成数值化映射 (M->1, F->0)")
+    if 'gender' in df.columns:
+        # 定义全面的映射字典
+        gender_map = {
+            'M': 1, 'F': 0, 
+            'Male': 1, 'Female': 0, 
+            'MALE': 1, 'FEMALE': 0,
+            1: 1, 0: 0, 1.0: 1, 0.0: 0
+        }
+        df['gender'] = df['gender'].map(gender_map)
+        # 填充缺失性别（可选，通常建议中位数或删掉）
+        df['gender'] = df['gender'].fillna(df['gender'].mode()[0]).astype(int)
+        print("✅ 字段 'gender' 已完成归一化映射 (1:Male, 0:Female)")
 
     # =========================================================
     # 3. 📊 自动化统计分析 (Table 1 & 2) - 基于物理尺度
@@ -138,31 +147,54 @@ def run_mimic_standardization():
     # =========================================================
     # 7. ⚖️ Z-score 标准化 (仅针对数值特征)
     # =========================================================
-    print("⚖️ 执行 Z-score 标准化 (排除标签和亚组列)...")
+    # =========================================================
+    # 7. ⚖️ Z-score 标准化
+    # =========================================================
+    print("⚖️ 执行 Z-score 标准化...")
     scaler = StandardScaler()
     
-    # 关键点：只标准化数值特征，protected_cols 保持原样
+    # 修复点：强制转换为 DataFrame 以保持特征名，虽然 StandardScaler 本身不存，
+    # 但我们要在 bundle 中手动建立列名映射。
     df_model[numeric_features] = scaler.fit_transform(df_model[numeric_features])
     joblib.dump(scaler, SCALER_PATH)
 
     # =========================================================
-    # 8. 检查并保存
+    # 8. 📦 【关键新增】: 生成并保存训练资产束 (Artifact Bundle)
     # =========================================================
-    if 'subgroup_no_renal' in df_model.columns:
-        unique_vals = df_model['subgroup_no_renal'].unique()
-        print(f"🚩 最终亚组列状态检查: {unique_vals} (应为 [1 0] 或 [0 1])")
+    print("\n📦 正在构建训练资产束 (用于跨库对齐)...")
     
-    print(f"\n📋 原始数据探测: {df.shape[0]} 行, {df.shape[1]} 列")
-    print(f"{'Feature Name':<25} | {'Missing%':<10} | {'Median':<10} | {'Mean':<10} | {'Max':<10}")
-    print("-" * 75)
-        
+    # 计算物理尺度下的中位数（在 df 上计算，而不是 df_model）
+    # 这是为了给 eICU 提供真实的物理参考
+    mimic_medians = df[numeric_features].median().to_dict()
+    
+    # 构建资产字典
+    train_assets = {
+        'skewed_cols': existing_skewed,      # 哪些列做了 Log1p
+        'medians': mimic_medians,            # 物理中位数 (纠错关键)
+        'feature_order': numeric_features,   # 训练时的特征绝对顺序
+        'n_samples': len(df)
+    }
+    
+    BUNDLE_PATH = os.path.join(ARTIFACT_DIR, "train_assets_bundle.pkl")
+    joblib.dump(train_assets, BUNDLE_PATH)
+    
+    # --- DEBUG 增强输出 ---
+    print("-" * 30)
+    print(f"✅ 资产束已持久化: {BUNDLE_PATH}")
+    print(f"📊 抽样核查 (MIMIC 物理中位数):")
+    for check_f in ['admission_age', 'creatinine_max', 'ph_min']:
+        if check_f in mimic_medians:
+            print(f"   - {check_f:<15}: {mimic_medians[check_f]:.4f}")
+    print("-" * 30)
+
+    # =========================================================
+    # 9. 检查并保存
+    # =========================================================
+    # ... 原有的保存代码 ...
     processed_path = os.path.join(SAVE_DIR, "mimic_processed.csv")
     df_model.to_csv(processed_path, index=False)   
     
-    print("-" * 70)
-    print(f"✅ 模块 03 处理完成！")
-    print(f"   - 建模张量: {processed_path}")
-    print(f"   - 标准化后的特征数: {len(numeric_features)}")
+    print(f"✅ 模块 03 处理完成！建模张量维度: {df_model.shape}")
     print("-" * 70)
 
 if __name__ == "__main__":
