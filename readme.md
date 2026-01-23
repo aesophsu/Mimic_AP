@@ -23,7 +23,7 @@
 ### 第四阶段：外部验证与人群迁移 (Validation)
 
 * **08_eicu_sql_extraction.sql**: [定向提取] 依据 `selected_features.json` 在 eICU 中精准提取对应列，产出 `data/raw/eicu_raw_data.csv`。
-* **09_eicu_alignment_cleaning.py**: [跨库对齐] 强制加载 `mimic_scaler.joblib` 和 `train_assets_bundle.pkl`，确保 eICU 数据张量顺序与尺度与 MIMIC 100% 一致。产出 `data/external/eicu_processed_{target}.csv`。
+* **09_eicu_alignment_cleaning.py**: [跨库对齐] 强制加载 `mimic_scaler.joblib` 和 `train_assets_bundle.pkl`，确保 eICU 数据张量顺序与尺度与 MIMIC 100% 一致。产出 `data/external/eicu_aligned.csv`与`data/external/eicu_processed_{target}.csv`。
 * **10_cross_cohort_audit.py**: [漂移分析] 对比两库特征分布，产出 `validation/eicu_vs_mimic_drift.json`。
 * **11_external_validation_perf.py**: [盲测验证] 加载模型与 `thresholds.json` 对 eICU 盲测。产出 Table 4 及跨库 ROC 对比图。
 
