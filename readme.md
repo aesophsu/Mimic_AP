@@ -115,6 +115,7 @@ project_root/
 │   │   │   ├── thresholds.json                # 07步：复合结局最佳截断值资产
 │   │   │   └── internal_diagnostic_perf.csv   # 07步：复合结局内部验证详细指标
 │   ├── scalers/                       # 尺度转换持久化文件 (核心！)
+│   │   ├── feature_metadata.json
 │   │   ├── mimic_scaler.joblib        # 03 步保存的 StandardScaler
 │   │   ├── mimic_mice_imputer.joblib  # 03 步保存的 MICE Imputer
 │   │   ├── skewed_cols_config.pkl     # 记录需要进行 Log1p 转换的列名
