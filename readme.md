@@ -4,11 +4,11 @@
 
 * **01_mimic_sql_extraction.sql**: [原始提取] 建立 MIMIC 队列，产出 `data/raw/mimic_raw_data.csv`。
 * **02_mimic_cleaning.py**: [物理对齐] 加载 `feature_dictionary.json`，执行单位换算与极值清洗，产出 `data/cleaned/mimic_raw_scale.csv` (用于统计描述)。
-* **03_mimic_standardization.py**: [张量化] 执行 Log 转换与 MICE 插补，持久化 `mimic_scaler.joblib` 等资产，产出 `data/cleaned/mimic_processed.csv` (用于建模)。
+* **03_mimic_standardization.py**: [张量化] 基于 `mimic_raw_scale.csv` 产出 Table 1/2。执行 Log 转换与 MICE 插补，持久化 `mimic_scaler.joblib` 等资产，产出 `data/cleaned/mimic_processed.csv` (用于建模)。
 
 ### 第二阶段：描述统计与审计 (Audit)
 
-* **04_mimic_stat_audit.py**: [基线分析] 基于 `mimic_raw_scale.csv` 产出 Table 1/2。绘制缺失值热图于 `results/figures/audit/`。
+* **04_mimic_stat_audit.py**: [基线分析] 绘制缺失值热图于 `results/figures/audit/`。
 
 ### 第三阶段：特征精炼与模型竞赛 (Modeling)
 
