@@ -109,21 +109,42 @@ def plot_feature_importance(features, weights, target):
 def run_lasso_selection_flow():
     targets = ['pof', 'mortality', 'composite']
     df = pd.read_csv(INPUT_PATH)
-
+    print(f"{'Feature Name':<25} | {'Missing%':<10} | {'Median':<10} | {'Mean':<10} | {'Max':<10}")
+    for col in df.columns:
+        if pd.api.types.is_numeric_dtype(df[col]):
+            series = df[col].dropna()
+            missing = df[col].isnull().mean() * 100
+            med = series.median() if not series.empty else 0
+            mean = series.mean() if not series.empty else 0
+            v_max = series.max() if not series.empty else 0
+            print(f"{col:<25} | {missing:>8.2f}% | {med:>10.2f} | {mean:>10.2f} | {v_max:>10.2f}")
+            
     protected = ['pof', 'mortality', 'composite', 'subgroup_no_renal',
                  'resp_pof', 'cv_pof', 'renal_pof',
                  'sofa_score', 'apsiii', 'sapsii', 'oasis', 'lods',
                  'subject_id', 'hadm_id', 'stay_id', 'los',
                  'mechanical_vent_flag', 'vaso_flag']
+    # 优化后的审计逻辑
     X_cols = [c for c in df.columns if c not in protected]
-    X_audit = df[X_cols]
-    max_mean = X_audit.mean().abs().max()
-    print(f"🔍 [标准化审计] 特征最大绝对均值: {max_mean:.6f}")
-    if max_mean > 0.1:
-        print("⚠️ 警告: 检测到特征均值显著偏离0，请确认是否已运行 03_standardization.py")
-    else:
-        print("✅ 审计通过: 特征尺度已对齐")
-
+    
+    # 定义哪些是二分类特征（这些不需要 Mean=0）
+    binary_cols = [c for c in X_cols if df[c].nunique() <= 2]
+    continuous_cols = [c for c in X_cols if c not in binary_cols]
+    
+    # 只审计连续变量
+    if continuous_cols:
+        max_mean_cont = df[continuous_cols].mean().abs().max()
+        print(f"🔍 [标准化审计] 连续特征最大绝对均值: {max_mean_cont:.6f}")
+        if max_mean_cont > 0.1:
+            print("⚠️ 警告: 连续特征均值偏离0，请检查标准化步骤")
+        else:
+            print("✅ 审计通过: 连续特征已对齐")
+    
+    # 额外检查：是否有特征的标准差不为 1
+    max_std_diff = (df[continuous_cols].std() - 1).abs().max()
+    if max_std_diff > 0.2:
+        print(f"⚠️ 警告: 连续特征标准差偏离1 (Max Diff: {max_std_diff:.2f})")
+        
     all_outcomes_features = {}
 
     for target in targets:
@@ -175,10 +196,6 @@ def run_lasso_selection_flow():
             top_idx = np.argsort(coef_abs)[-12:]
             selected_features = [selected_features[i] for i in top_idx]
 
-        # 可视化
-        plot_academic_lasso(lasso_cv, X.columns, target)
-        plot_feature_importance(selected_features, [all_outcomes_features[target]["weights"][f] for f in selected_features], target)
-
         all_outcomes_features[target] = {
             "n_features": len(selected_features),
             "features": selected_features,
@@ -187,6 +204,10 @@ def run_lasso_selection_flow():
             "best_lambda": float(1 / best_C_1se)
         }
 
+        # 可视化
+        plot_academic_lasso(lasso_cv, X.columns, target)
+        current_weights = [all_outcomes_features[target]["weights"][f] for f in selected_features]
+        plot_feature_importance(selected_features, current_weights, target)
         print(f"🎯 选定特征 ({len(selected_features)} 个): {', '.join(selected_features)}")
 
         # 独立保存
