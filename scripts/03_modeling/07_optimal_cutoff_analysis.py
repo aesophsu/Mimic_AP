@@ -170,7 +170,7 @@ def export_formatted_table3():
     )
 
     final_columns = ['Outcome', 'Group', 'Model', 'AUC (95% CI)', 'Sens.', 'Spec.', 'F1', 'Optimal Cut-off']
-    output_path = os.path.join(TABLE_ROOT, "Table3_Final_Performance_SCI.csv")
+    output_path = os.path.join(TABLE_ROOT, "Table3_Final_Performance.csv")
     table3[final_columns].to_csv(output_path, index=False, encoding='utf-8-sig')
     print(f"✨ Table 3 (Full vs Subgroup) 已导出至: {output_path}")
     
