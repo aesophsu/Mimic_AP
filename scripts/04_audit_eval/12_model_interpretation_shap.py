@@ -45,6 +45,19 @@ def compute_shap_values(X, model, explainer_type):
         shap_res = explainer(X)
     return shap_res
 
+def save_shap_data(shap_values, X, target):
+    """保存 SHAP 值及对应的原始特征值，便于后续统计建模"""
+    shap_df = pd.DataFrame(shap_values.values, columns=X.columns)
+    raw_df = X.reset_index(drop=True)
+    raw_df.columns = [f"raw_{col}" for col in raw_df.columns]
+    combined_df = pd.concat([shap_df, raw_df], axis=1)
+    save_path = os.path.join(INTERP_DIR, f"SHAP_Data_Export_{target}.csv")
+    combined_df.to_csv(save_path, index=False)
+    base_val = shap_values.base_values[0] if isinstance(shap_values.base_values, np.ndarray) else shap_values.base_values
+    with open(os.path.join(INTERP_DIR, f"SHAP_BaseValue_{target}.txt"), "w") as f:
+        f.write(str(base_val))
+    print(f"  -> SHAP 原始数据已导出: {save_path}")
+
 def plot_shap_summary(shap_values, X, target):
     """医学蜂群图：全局特征贡献排序"""
     plt.figure(figsize=(9, 7), dpi=300)
@@ -162,7 +175,7 @@ def main():
             
             # 2. 计算 SHAP 值
             shap_vals = compute_shap_values(X_test, model, explainer_type)
-            
+            save_shap_data(shap_vals, X_test, target)
             # 3. 生成三大标准解释图
             plot_shap_summary(shap_vals, X_test, target)
             plot_shap_force(shap_vals, X_test, target)
