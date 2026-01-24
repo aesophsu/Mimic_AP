@@ -1,117 +1,139 @@
 import os
-import pandas as pd
+import json
 import numpy as np
-from tableone import TableOne
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import ks_2samp
 
-# =========================================================
-# 1. 配置与路径
-# =========================================================
-BASE_DIR = "../../"
-MIMIC_RAW_PATH = os.path.join(BASE_DIR, "data/cleaned/mimic_raw_scale.csv") 
-EICU_ALIGNED_PATH = os.path.join(BASE_DIR, "data/external/eicu_aligned.csv") 
-SAVE_DIR = os.path.join(BASE_DIR, "results/tables")
+# ===================== 配置路径 =====================
+BASE_DIR = "../.."
+MIMIC_PROCESSED = os.path.join(BASE_DIR, "data/cleaned/mimic_processed.csv")
+EICU_PROCESSED_DIR = os.path.join(BASE_DIR, "data/external")
+VALIDATION_DIR = os.path.join(BASE_DIR, "validation")
+FIGURE_DIR = os.path.join(BASE_DIR, "results/figures/comparison")
 
-if not os.path.exists(SAVE_DIR):
-    os.makedirs(SAVE_DIR, exist_ok=True)
+os.makedirs(VALIDATION_DIR, exist_ok=True)
+os.makedirs(FIGURE_DIR, exist_ok=True)
 
-def run_step_10_cross_audit():
-    print("🚀 开始跨库基线审计 (MIMIC-IV vs eICU)...")
+# 结局列表（与 06/09 步一致）
+TARGETS = ['pof', 'mortality', 'composite']
 
-    # 1. 加载数据
-    if not (os.path.exists(MIMIC_RAW_PATH) and os.path.exists(EICU_ALIGNED_PATH)):
-        print("❌ 错误：找不到原始物理尺度数据，请确认 02 步和 09 步已成功运行。")
-        return
-
-    df_mimic = pd.read_csv(MIMIC_RAW_PATH)
-    df_eicu = pd.read_csv(EICU_ALIGNED_PATH)
-
-    # 2. 选取审计特征
-    audit_features = [
-        'admission_age', 'gender', 'bmi', 
-        'creatinine_max', 'bun_max', 'wbc_max', 
-        'glucose_lab_max', 'hematocrit_max', 'respiratory_rate_max',
-        'pof', 'mortality_28d'
+def load_processed_data(target):
+    """加载数据并自动对齐共有特征"""
+    mimic_path = MIMIC_PROCESSED
+    eicu_path = os.path.join(EICU_PROCESSED_DIR, f"eicu_processed_{target}.csv")
+    
+    if not os.path.exists(mimic_path) or not os.path.exists(eicu_path):
+        raise FileNotFoundError(f"缺失文件: {mimic_path} 或 {eicu_path}")
+    
+    df_mimic = pd.read_csv(mimic_path)
+    df_eicu = pd.read_csv(eicu_path)
+    
+    # 1. 排除非预测特征
+    exclude = [
+        'pof', 'mortality', 'composite', 'subgroup_no_renal', 
+        'gender', 'malignant_tumor', 'mechanical_vent_flag', 
+        'vaso_flag', 'dialysis_flag', 'uniquepid', 'patientunitstayid'
     ]
     
-    common_cols = [c for c in audit_features if c in df_mimic.columns and c in df_eicu.columns]
+    # 2. 动态寻找共有特征 (Intersection)
+    # 这一步会自动过滤掉那些在 eICU 中没被包含的特征（如 sofa_score 等）
+    common_features = [c for c in df_eicu.columns if c in df_mimic.columns and c not in exclude]
     
-    # 3. 提取子集并标记队列
-    df_mimic_sub = df_mimic[common_cols].copy()
-    df_mimic_sub['cohort'] = 'MIMIC-IV (Dev)'
+    # 3. 确保是数值型
+    features = [c for c in common_features if pd.api.types.is_numeric_dtype(df_mimic[c])]
     
-    df_eicu_sub = df_eicu[common_cols].copy()
-    df_eicu_sub['cohort'] = 'eICU (External)'
-
-    # ---------------------------------------------------------
-    # 【修复核心】统一分类变量类型，防止 TableOne 排序报错
-    # ---------------------------------------------------------
-    categorical = ['gender', 'pof', 'mortality_28d']
-    existing_cat = [c for c in categorical if c in common_cols]
-
-    print("🛠️ 正在对齐分类变量编码...")
-    for col in existing_cat:
-        # 1. 将所有值转为字符串，避免 int 与 str 混合
-        # 2. 处理可能存在的编码差异（统一为 0/1）
-        for df_temp in [df_mimic_sub, df_eicu_sub]:
-            # 统一性别映射示例（如果 eICU 是 'M'/'F' 而 MIMIC 是 1/0，这里强制统一）
-            if col == 'gender':
-                df_temp[col] = df_temp[col].map({'M': '1', 'F': '0', 1: '1', 0: '0', '1': '1', '0': '0'})
-            
-            # 强制转为 String 并处理缺失值
-            df_temp[col] = df_temp[col].astype(str).replace({'nan': np.nan, 'None': np.nan, 'unknown': np.nan})
-        
-        print(f"  ✅ {col} 类型对齐完成")
-
-    # 合并数据
-    df_total = pd.concat([df_mimic_sub, df_eicu_sub], axis=0, ignore_index=True)
-
-    # 4. 执行 TableOne 统计
-    print("📊 正在计算统计指标与 SMD (Standardized Mean Difference)...")
+    print(f"  对齐成功: 结局 [{target.upper()}] 共有 {len(features)} 个特征参与漂移分析")
     
-    nonnormal = [c for c in common_cols if c not in categorical]
+    return df_mimic[features], df_eicu[features], features
 
-    try:
-        mytable = TableOne(
-            df_total, 
-            columns=common_cols, 
-            categorical=existing_cat, 
-            nonnormal=nonnormal,
-            groupby='cohort', 
-            pval=True, 
-            smd=True,
-            overall=False # 重点对比两库差异，无需 Overall
-        )
+def ks_drift_test(mimic_series, eicu_series):
+    """KS 测试 + 效应量"""
+    if len(mimic_series.dropna()) < 5 or len(eicu_series.dropna()) < 5:
+        return {"statistic": np.nan, "pvalue": np.nan, "drift": "样本不足"}
+    
+    ks_stat, p_value = ks_2samp(mimic_series.dropna(), eicu_series.dropna())
+    drift_level = "显著" if p_value < 0.05 else "不显著"
+    return {
+        "ks_statistic": round(ks_stat, 4),
+        "p_value": round(p_value, 4),
+        "drift_significant": drift_level,
+        "max_diff": round(ks_stat, 4)  # KS 统计量本身即最大累积差异
+    }
 
-        # 5. 保存资产
-        table_path = os.path.join(SAVE_DIR, "Table1_MIMIC_vs_eICU_SMD.csv")
-        mytable.to_csv(table_path)
-        
-        print("\n" + "="*60)
-        print(f"✨ 跨库基线表已生成：{table_path}")
-        print("="*60)
-        
-        # 6. 人群漂移分析 (SMD > 0.1 表示存在临床分布不一致)
-        # 注意：不同版本 tableone 获取 SMD 的方式略有不同
-        print("\n🚨 人群漂移预警 (Population Drift Analysis):")
-        # 尝试从 mytable.tableone 获取
+def plot_distribution_comparison(mimic_series, eicu_series, feature_name, target):
+    """绘制分布对比图（密度图 + KS 统计）"""
+    plt.figure(figsize=(10, 6), dpi=300)
+    sns.kdeplot(mimic_series.dropna(), label='MIMIC (Train)', color='#1f77b4', linewidth=2)
+    sns.kdeplot(eicu_series.dropna(), label='eICU (Validation)', color='#ff7f0e', linewidth=2)
+    
+    plt.title(f'Distribution Comparison: {feature_name}\n({target.upper()})', fontsize=14, fontweight='bold')
+    plt.xlabel(feature_name, fontsize=12)
+    plt.ylabel('Density', fontsize=12)
+    plt.legend(fontsize=10)
+    sns.despine()
+    
+    # 添加 KS 统计文本
+    ks_result = ks_drift_test(mimic_series, eicu_series)
+    plt.text(0.02, 0.95, f"KS Statistic: {ks_result['ks_statistic']:.4f}\np-value: {ks_result['p_value']:.4f}",
+             transform=plt.gca().transAxes, fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
+    
+    save_path = os.path.join(FIGURE_DIR, f"dist_drift_{feature_name}_{target}.png")
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.close()
+    return save_path
+
+def main():
+    print("="*70)
+    print("启动模块 10: 跨队列漂移分析 (MIMIC vs eICU)")
+    print("="*70)
+
+    drift_summary = {}
+
+    for target in TARGETS:
+        print(f"\n分析结局: {target.upper()}")
         try:
-            # 访问 MultiIndex 中的 SMD 列
-            smd_data = mytable.tableone['SMD']
-            for feat in smd_data.index:
-                val = smd_data.loc[feat]
-                # 有些特征可能有多个 level，取最大值
-                val_max = val.max() if isinstance(val, pd.Series) else val
-                
-                if pd.isna(val_max): continue
-                
-                if val_max > 0.1:
-                    status = "🔴 显著差异" if val_max > 0.2 else "🟡 轻微偏移"
-                    print(f"  - {feat:<20}: SMD = {val_max:.3f} | {status}")
+            df_mimic, df_eicu, features = load_processed_data(target)
         except Exception as e:
-            print(f"  ⚠️ 自动审计 SMD 失败 (可能库版本不同)，请手动检查 CSV 文件中的 SMD 列。")
+            print(f"  加载失败: {e}")
+            continue
 
-    except Exception as e:
-        print(f"❌ TableOne 执行失败: {e}")
+        drift_summary[target] = {}
+        top_drift_features = []
+
+        for feature in features:
+            if feature not in df_mimic.columns or feature not in df_eicu.columns:
+                continue
+
+            mimic_vals = df_mimic[feature]
+            eicu_vals = df_eicu[feature]
+
+            ks_result = ks_drift_test(mimic_vals, eicu_vals)
+            drift_summary[target][feature] = ks_result
+
+            # 记录显著漂移特征（用于绘图）
+            if ks_result['p_value'] < 0.05:
+                top_drift_features.append((feature, ks_result['ks_statistic']))
+
+            # 绘制 Top 漂移特征的分布对比图（可选：只画 p<0.05 的前 10 个）
+            if ks_result['p_value'] < 0.05:
+                plot_distribution_comparison(mimic_vals, eicu_vals, feature, target)
+
+        # 保存该结局的漂移结果
+        drift_summary[target]['summary'] = {
+            "total_features": len(features),
+            "significant_drift": len([f for f in drift_summary[target] if drift_summary[target][f]['p_value'] < 0.05]),
+            "top_drift": sorted(top_drift_features, key=lambda x: x[1], reverse=True)[:10]
+        }
+
+    # 全局保存漂移报告
+    drift_json_path = os.path.join(VALIDATION_DIR, "eicu_vs_mimic_drift.json")
+    with open(drift_json_path, 'w', encoding='utf-8') as f:
+        json.dump(drift_summary, f, ensure_ascii=False, indent=4)
+
+    print(f"\n漂移分析完成！报告保存至: {drift_json_path}")
+    print("下一步：进入 11_external_validation_perf.py（eICU 盲测性能评估）")
 
 if __name__ == "__main__":
-    run_step_10_cross_audit()
+    main()
