@@ -49,53 +49,72 @@ def load_model_and_data(target):
 def plot_dca(dca_res, data_df, target):
     """
     医学出版级 DCA 与 Calibration 组合绘图
-    功能：展示临床净获益 (Net Benefit) 并叠加模型可靠性 (Calibration)
+    增强版：包含 Treat All/None 标注、最佳阈值辅助线及次轴校准曲线
     """
     # 1. 数据预处理
     plot_df = dca_res.copy()
     plot_df['model'] = plot_df['model'].str.replace('_prob', '', regex=False)
     
+    # 获取绘图范围最大值以便放置文字
+    max_nb = plot_df['net_benefit'].max()
+    
+    # 加载最佳阈值 (假设路径为 artifacts/models/{target}/best_threshold.json)
+    # 如果您没有这个文件，逻辑会自动降级
+    thresh_path = os.path.join(MODEL_ROOT, target.lower(), "best_threshold.json")
+    optimal_th = None
+    if os.path.exists(thresh_path):
+        with open(thresh_path, 'r') as f:
+            optimal_th = json.load(f).get('best_threshold', 0.5)
+
     fig, ax1 = plt.subplots(figsize=(8, 7), dpi=300)
     
-    # 2. 绘制 DCA 基准线
+    # 2. 绘制 DCA 基准线 (All vs None)
     sns.lineplot(data=plot_df[plot_df['model'] == 'all'], x='threshold', y='net_benefit', 
-                 color='black', linestyle='--', lw=1.2, ax=ax1)
+                 color='black', linestyle='--', lw=1.2, ax=ax1, zorder=1)
     sns.lineplot(data=plot_df[plot_df['model'] == 'none'], x='threshold', y='net_benefit', 
-                 color='black', lw=1.2, ax=ax1)
+                 color='black', lw=1.2, ax=ax1, zorder=1)
     
     # 3. 绘制预测模型 DCA 曲线
     pred_models = plot_df[~plot_df['model'].isin(['all', 'none'])]
     sns.lineplot(data=pred_models, x='threshold', y='net_benefit', 
-                 hue='model', lw=2.5, palette="Set1", ax=ax1)
+                 hue='model', lw=2.5, palette="Set1", ax=ax1, zorder=2)
     
-    # 4. 添加显式文本标注 (末端对齐)
-    ax1.text(0.71, plot_df[plot_df['model'] == 'all']['net_benefit'].iloc[-5], 
-             'Treat All', fontsize=9, fontweight='bold')
-    ax1.text(0.71, 0.01, 'Treat None', fontsize=9, fontweight='bold')
+    # 4. 显式文本标注 (Treat All / Treat None)
+    # 使用 iloc[-5] 确保文字出现在曲线末端稍靠左的位置，避免被边框遮挡
+    all_nb_tail = plot_df[plot_df['model'] == 'all']['net_benefit'].iloc[-5]
+    ax1.text(0.71, all_nb_tail, 'Treat All', fontsize=9, fontweight='bold', color='black')
+    ax1.text(0.71, 0.005, 'Treat None', fontsize=9, fontweight='bold', color='black')
     
-    # 5. 叠加校准曲线 (使用次坐标轴)
-    # 自动获取第一个主预测模型的概率列进行展示
+    # 5. 添加最佳阈值标注线
+    if optimal_th is not None:
+        ax1.axvline(optimal_th, color='gray', linestyle=':', alpha=0.6, lw=1.5)
+        ax1.text(optimal_th + 0.01, max_nb * 0.85, f'Optimal Th: {optimal_th:.3f}', 
+                 fontsize=9, color='dimgray', fontstyle='italic', fontweight='bold')
+    
+    # 6. 叠加校准曲线 (使用右侧次坐标轴)
     main_model_col = [c for c in data_df.columns if '_prob' in c][0]
     prob_true, prob_pred = calibration_curve(data_df['outcome'], data_df[main_model_col], n_bins=10)
     
     ax2 = ax1.twinx()
-    ax2.plot(prob_pred, prob_true, 'o--', color='purple', alpha=0.4, label='Calibration (Main Model)')
-    ax2.set_ylabel('Observed Fraction (Calibration)', color='purple', fontsize=10)
+    ax2.plot(prob_pred, prob_true, 'o--', color='purple', alpha=0.35, label='Reliability (Calibration)')
+    ax2.set_ylabel('Observed Fraction (Actual)', color='purple', fontsize=10)
     ax2.tick_params(axis='y', labelcolor='purple')
     ax2.set_ylim(0, 1)
 
-    # 6. 出版级样式美化
-    ax1.set_title(f"Clinical Decision & Reliability: {target.upper()}", fontsize=14, fontweight='bold', pad=20)
-    ax1.set_xlabel("Threshold Probability", fontsize=11)
-    ax1.set_ylabel("Net Benefit", fontsize=11)
+    # 7. 出版级样式美化
+    ax1.set_title(f"Clinical Benefit & Reliability Analysis: {target.upper()}", 
+                  fontsize=14, fontweight='bold', pad=25)
+    ax1.set_xlabel("Threshold Probability (Risk Threshold)", fontsize=11)
+    ax1.set_ylabel("Net Benefit (Clinical Utility)", fontsize=11)
     ax1.set_xlim(0, 0.75)
-    ax1.set_ylim(-0.015, plot_df['net_benefit'].max() * 1.15)
+    ax1.set_ylim(-0.015, max_nb * 1.15)
     
-    ax1.legend(frameon=False, loc='upper right', bbox_to_anchor=(0.95, 0.95))
+    # 合并图例
+    ax1.legend(frameon=False, loc='upper right', bbox_to_anchor=(0.98, 0.98), fontsize=9)
     ax1.grid(axis='y', color='whitesmoke', linestyle='--', zorder=0)
-    sns.despine(ax=ax1, right=False) # 保留右侧轴以显示校准刻度
+    sns.despine(ax=ax1, right=False) 
     
-    # 7. 双格式导出
+    # 8. 导出文件
     base_n = os.path.join(FIGURE_DIR, f"Fig5_DCA_Calibration_{target}")
     plt.savefig(f"{base_n}.pdf", bbox_inches='tight')
     plt.savefig(f"{base_n}.png", bbox_inches='tight', dpi=600)
