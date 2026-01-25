@@ -1,41 +1,128 @@
 ## 重症AP预测模型：标准化研究流
 
-### 第一阶段：数据工程与资产基石 (Foundation)
+### I. MIMIC 内部开发与建模阶段 (Steps 01-07)
 
-* **01_mimic_sql_extraction.sql**: [原始提取] 建立 MIMIC 临床队列并关联结局指标，产出 `data/raw/mimic_raw_data.csv`。
-* **02_mimic_cleaning.py**: [审计与对齐] 执行结局指标逻辑重构、单位换算、生理极值清洗与 1%-99% 盖帽处理，产出 `data/cleaned/mimic_raw_scale.csv`。
-* **03_mimic_standardization.py**: [张量化与基线] 执行亚组构建、Table 1/2 自动化生成、Log 转换、MICE 插补与 Z-Score 标准化。
-* **核心产物**：
-1. **建模张量**：`data/cleaned/mimic_processed.csv` (用于特征筛选与建模)；
-2. **资产包**：`artifacts/scalers/train_assets_bundle.pkl` (包含 Log 策略、特征顺序与中位数记忆)；
-3. **转换器**：`mimic_scaler.joblib` (标准化标尺) 与 `mimic_mice_imputer.joblib` (插补模型)；
-4. **统计表**：`results/tables/table1_baseline.csv` 与 `table2_renal_subgroup.csv`。
+**01. 数据提取**
 
-   
-### 第二阶段：描述统计与审计 (Audit)
+* **脚本:** `01_mimic_sql_extraction.sql`
+* **动作:** 建立临床队列，关联结局。
+* **产出:** `data/raw/mimic_raw_data.csv`
 
-* **04_mimic_stat_audit.py**: [基线分析] 自动化生成 Table 1 基线表与缺失值分布图，产出 `results/tables/table1_baseline.csv`。
+**02. 清洗与对齐**
 
-### 第三阶段：特征精炼与模型竞赛 (Modeling)
+* **脚本:** `02_mimic_cleaning.py`
+* **动作:** 逻辑重构、单位换算、盖帽处理 (1%-99%)。
+* **产出:** `data/cleaned/mimic_raw_scale.csv`
 
-* **05_feature_selection_lasso.py**: [降维] 基于 1-SE 准则通过 LASSO 筛选强预测特征，产出 `features/selected_features.json`。
-* **06_model_training_optuna.py**: [进化寻优] 调用 Optuna 引擎进行多模型超参数搜索与 5-Fold 交叉验证，产出 `artifacts/models/best_model_trial.pkl`。
-* **07_probability_calibration.py**: [概率校准] 对最优模型进行 Isotonic/Sigmoid 概率对齐，产出校准后的模型资产 `artifacts/models/calibrated_model_bundle.pkl`。
-* **08_optimal_cutoff_analysis.py**: [阈值绑定] 基于 Youden Index 计算最优诊断切分点，产出 `artifacts/assets/thresholds.json`。
+**03. 标准化与基线**
 
-### 第四阶段：外部验证与人群迁移 (Validation)
+* **脚本:** `03_mimic_standardization.py`
+* **动作:** Log 转换、MICE 插补、Z-Score 标准化。
+* **产出:**
+* **张量:** `data/cleaned/mimic_processed.csv`
+* **模型资产:** `artifacts/scalers/train_assets_bundle.pkl`, `mimic_scaler.joblib`, `mimic_mice_imputer.joblib`
+* **统计表:** `results/tables/table1_baseline.csv`, `table2_renal_subgroup.csv`
 
-* **09_eicu_sql_extraction.sql**: [定向提取] 依据 `selected_features.json` 变量清单在 eICU 数据库进行映射提取，产出 `data/raw/eicu_raw_data.csv`。
-* **10_eicu_alignment_standardization.py**: [跨库对齐] 强制加载 `mimic_scaler.joblib` 对外部数据进行同分布转化，产出 `data/external/eicu_processed.csv`。
-* **11_cross_cohort_drift_test.py**: [漂移分析] 对比 MIMIC 与 eICU 的特征分布差异（PSI/KL散度），产出 `results/figures/audit/drift_report.png`。
-* **12_external_validation_perf.py**: [盲测验证] 使用校准模型对 eICU 进行零样本推理，产出跨库验证对比表 `results/tables/external_validation_metrics.csv`。
 
-### 第五阶段：临床解释与转化决策 (Interpretation)
 
-* **13_model_interpretation_shap.py**: [黑盒拆解] 计算全局 SHAP 贡献度与个体样本解释，产出 `results/figures/interpretation/shap_summary.png`。
-* **14_clinical_decision_tool.py**: [转化工具] 绘制 DCA 决策曲线并导出逻辑回归评分板，产出 `results/figures/clinical/DCA_curve.png` 与 `results/tables/nomogram_points.csv`。
+**04. 数据审计**
+
+* **脚本:** `04_mimic_stat_audit.py`
+* **动作:** 审计完整性，绘制缺失模式。
+* **产出:** `results/figures/audit/mimic_missing_heatmap_pro.png`
+
+**05. 特征筛选 (LASSO)**
+
+* **脚本:** `05_feature_selection_lasso.py`
+* **动作:** 1-SE 准则筛选核心因子，标准化审计。
+* **产出:**
+* **特征表:** `artifacts/features/selected_features.json`, `artifacts/models/{target}/selected_features.json`
+* **影像:** `results/figures/lasso/lasso_diag_{target}.png`, `results/figures/lasso/lasso_importance_{target}.png`
+
+
+
+**06. 模型训练与寻优**
+
+* **脚本:** `06_model_training_main.py`
+* **动作:** 多模型竞赛 (Optuna)、概率校准。
+* **产出:**
+* **模型包:** `artifacts/models/{target}/all_models_dict.pkl`, `deploy_bundle.pkl`
+* **评估:** `artifacts/models/performance_report.csv`, `feature_importance.csv`, `eval_data.pkl`
+* **影像:** `results/figures/{target}/{target}_ROC.pdf`, `results/figures/{target}/{target}_Calibration.pdf`
+
+
+
+**07. 阈值寻优与审计**
+
+* **脚本:** `07_optimal_cutoff_analysis.py`
+* **动作:** 确定 Youden Index，生成终版效能表。
+* **产出:**
+* **参数:** `artifacts/models/{target}/thresholds.json` (最佳截断值)
+* **表格:** `results/tables/Table3_Final_Performance.csv`, `global_diagnostic_summary.csv`
+* **影像:** `results/figures/{target}/07_Diagnostic_{name}.pdf`, `results/figures/sci_forest_plot.pdf`, `results/figures/sci_feature_importance.pdf`
+
+
 
 ---
+
+### II. eICU 外部验证阶段 (Steps 08-11)
+
+**08. 外部数据提取**
+
+* **脚本:** `08_eicu_external_extraction.sql`
+* **动作:** 外部队列打捞，单位与结局逻辑对齐。
+* **产出:** `data/raw/eicu_raw_data.csv`, `eicu_cview.ap_external_validation` (视图)
+
+**09. 跨库对齐与清洗**
+
+* **脚本:** `09_eicu_alignment_cleaning.py`
+* **动作:** 复用 MIMIC 资产 (Scaler/Imputer) 进行克隆式预处理。
+* **产出:** `data/external/eicu_processed_{target}.csv`, `eicu_raw_scale.csv`
+
+**10. 跨队列漂移审计**
+
+* **脚本:** `10_cross_cohort_audit.py`
+* **动作:** 计算 KS 统计量，量化特征分布漂移。
+* **产出:** `validation/eicu_vs_mimic_drift.json`, `results/figures/comparison/dist_drift_{feat}_{target}.png`
+
+**11. 外部验证性能评估**
+
+* **脚本:** `11_external_validation_perf.py`
+* **动作:** 加载模型盲测，Bootstrap 计算置信区间。
+* **产出:**
+* **表格:** `results/tables/Table4_External_Validation.csv`
+* **影像:** `results/figures/comparison/ROC_External_{target}.pdf`, `Table4_Performance_Visualization.png`
+
+
+
+---
+
+### III. 临床解释与应用转化 (Steps 12-14)
+
+**12. 模型可解释性 (SHAP)**
+
+* **脚本:** `12_model_interpretation_shap.py`
+* **动作:** 量化特征贡献，非线性分析。
+* **产出:**
+* **数据:** `results/figures/interpretation/shap_values/SHAP_Data_Export_{target}.csv`
+* **影像:** `Fig4A_Summary_{target}.pdf`, `Fig4B_Force_{target}.pdf`, `Fig4C_Dep_{target}_{feat}.png`
+
+
+
+**13. 临床决策分析 (DCA)**
+
+* **脚本:** `13_clinical_calibration_dca.py`
+* **动作:** 计算临床净获益，锚定最优切点。
+* **产出:** `results/figures/clinical/DCA_Data_{target}.csv`, `Fig5_DCA_Calibration_{target}.pdf`
+
+**14. 列线图与 OR 分析**
+
+* **脚本:** `14_nomogram_odds_ratio.py`
+* **动作:** LR 统计推断，构建临床评分工具。
+* **产出:** `results/tables/OR_Statistics_{target}.csv`, `Forest_Plot_{target}_en.pdf`, `Nomogram_{target}_en.pdf`
+
+---
+
 
 ### 📂 项目目录树
 
