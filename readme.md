@@ -1,46 +1,35 @@
-## 🚀 重症预测模型：14步标准化研究流 (基于资产中枢架构)
+## 重症AP预测模型：标准化研究流
 
 ### 第一阶段：数据工程与资产基石 (Foundation)
 
-* **01_mimic_sql_extraction.sql**: [原始提取] 建立 MIMIC 队列，产出 `data/raw/mimic_raw_data.csv`。
-* **02_mimic_cleaning.py**: [物理对齐] 加载 `feature_dictionary.json`，执行单位换算与极值清洗，产出 `data/cleaned/mimic_raw_scale.csv` (用于统计描述)。
-* **03_mimic_standardization.py**: [张量化] 基于 `mimic_raw_scale.csv` 产出 Table 1/2。执行 Log 转换与 MICE 插补，持久化 `mimic_scaler.joblib` 等资产，产出 `data/cleaned/mimic_processed.csv` (用于建模)。
+* **01_mimic_sql_extraction.sql**: [原始提取] 建立 MIMIC 临床队列并关联结局指标，产出 `data/raw/mimic_raw_data.csv`。
+* **02_mimic_cleaning.py**: [审计与对齐] 执行结局指标逻辑重构、单位换算、生理极值清洗与 1%-99% 盖帽处理，产出 data/cleaned/mimic_raw_scale.csv。
+* **03_mimic_standardization.py**: [张量化] 执行特征缩放与中位数/MICE插补，产出 `data/cleaned/mimic_processed.csv` 与关键资产 `artifacts/assets/mimic_scaler.joblib`。
 
 ### 第二阶段：描述统计与审计 (Audit)
 
-* **04_mimic_stat_audit.py**: [基线分析] 绘制缺失值热图于 `results/figures/audit/`。
+* **04_mimic_stat_audit.py**: [基线分析] 自动化生成 Table 1 基线表与缺失值分布图，产出 `results/tables/table1_baseline.csv`。
 
 ### 第三阶段：特征精炼与模型竞赛 (Modeling)
 
-* **05_feature_selection_lasso.py**: [降维] 基于 1-SE 准则筛选核心变量，将 Top 12 名单固化至 `features/selected_features.json`。
-* **06_model_training_main.py**: [核心训练]
-* **动作**：读取 `selected_features.json`，使用 Optuna 寻优并进行概率校准。
-* **产出**：在 `artifacts/models/{target}/` 下生成 `all_models_dict.pkl`、`bootstrap_ci_stats.pkl` 及 `eval_data.pkl`。
-
-
-* **07_optimal_cutoff_analysis.py**: [阈值绑定] 计算 Youden Index 确定最佳截断值。产出 `thresholds.json` 并绘制带标注的诊断图。
+* **05_feature_selection_lasso.py**: [降维] 基于 1-SE 准则通过 LASSO 筛选强预测特征，产出 `features/selected_features.json`。
+* **06_model_training_optuna.py**: [进化寻优] 调用 Optuna 引擎进行多模型超参数搜索与 5-Fold 交叉验证，产出 `artifacts/models/best_model_trial.pkl`。
+* **07_probability_calibration.py**: [概率校准] 对最优模型进行 Isotonic/Sigmoid 概率对齐，产出校准后的模型资产 `artifacts/models/calibrated_model_bundle.pkl`。
+* **08_optimal_cutoff_analysis.py**: [阈值绑定] 基于 Youden Index 计算最优诊断切分点，产出 `artifacts/assets/thresholds.json`。
 
 ### 第四阶段：外部验证与人群迁移 (Validation)
 
-* **08_eicu_sql_extraction.sql**: [定向提取] 依据 `selected_features.json` 在 eICU 中精准提取对应列，产出 `data/raw/eicu_raw_data.csv`。
-* **09_eicu_alignment_cleaning.py**: [跨库对齐] 强制加载 `mimic_scaler.joblib` 和 `train_assets_bundle.pkl`，确保 eICU 数据张量顺序与尺度与 MIMIC 100% 一致。产出 `data/external/eicu_aligned.csv`与`data/external/eicu_processed_{target}.csv`。
-* **10_cross_cohort_audit.py**: [漂移分析] 对比两库特征分布，产出 `validation/eicu_vs_mimic_drift.json`。
-* **11_external_validation_perf.py**: [盲测验证] 加载模型与 `thresholds.json` 对 eICU 盲测。产出 Table 4 及跨库 ROC 对比图。
+* **09_eicu_sql_extraction.sql**: [定向提取] 依据 `selected_features.json` 变量清单在 eICU 数据库进行映射提取，产出 `data/raw/eicu_raw_data.csv`。
+* **10_eicu_alignment_standardization.py**: [跨库对齐] 强制加载 `mimic_scaler.joblib` 对外部数据进行同分布转化，产出 `data/external/eicu_processed.csv`。
+* **11_cross_cohort_drift_test.py**: [漂移分析] 对比 MIMIC 与 eICU 的特征分布差异（PSI/KL散度），产出 `results/figures/audit/drift_report.png`。
+* **12_external_validation_perf.py**: [盲测验证] 使用校准模型对 eICU 进行零样本推理，产出跨库验证对比表 `results/tables/external_validation_metrics.csv`。
 
 ### 第五阶段：临床解释与转化决策 (Interpretation)
 
-* **12_model_interpretation_shap.py**: [黑盒拆解] 对各结局执行 SHAP 全局与个体解释。产出 Summary Plot 与 Force Plot。
-* **13_clinical_calibration_dca.py**: [临床获益] 评估决策曲线 (DCA) 的净获益。产出 `results/figures/clinical/DCA_Benefit_Curve.png`。
-* **14_nomogram_odds_ratio.py**: [转化工具] 导出逻辑回归 OR 值。生成临床可视化诺莫图评分板。
+* **13_model_interpretation_shap.py**: [黑盒拆解] 计算全局 SHAP 贡献度与个体样本解释，产出 `results/figures/interpretation/shap_summary.png`。
+* **14_clinical_decision_tool.py**: [转化工具] 绘制 DCA 决策曲线并导出逻辑回归评分板，产出 `results/figures/clinical/DCA_curve.png` 与 `results/tables/nomogram_points.csv`。
 
 ---
-
-### 💡 流程更新亮点：
-
-1. **结局解耦 (Outcome Decoupling)**：由于你在第 6 步实现了资产按结局分类存放，后续的第 7、11、12、13 步将能够通过简单的 `target` 参数遍历所有文件夹，实现全自动的批量报告生成。
-2. **阈值绑定 (Threshold Binding)**：在第 7 步将最佳截断值写入 `thresholds.json` 是一个非常专业的做法，这模拟了现实临床设备的“报警阈值”设定。
-3. **资产闭环**：`artifacts/models/{target}/` 文件夹现在成为了一个“自包含”的预测单元，你可以随时把这个文件夹打包部署到任何生产环境。
-
 
 ### 📂 项目目录树
 
