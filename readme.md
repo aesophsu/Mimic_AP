@@ -152,13 +152,23 @@ project_root/
 │   │   ├── 05_feature_selection_lasso.py
 │   │   ├── 06_model_training_main.py  
 │   │   └── 07_optimal_cutoff_analysis.py
-│   └── 04_audit_eval/                 # 审计、验证与临床转化
-│       ├── 04_mimic_stat_audit.py     
-│       ├── 10_cross_cohort_audit.py   
-│       ├── 11_external_validation_perf.py 
-│       ├── 12_model_interpretation_shap.py
-│       ├── 13_clinical_calibration_dca.py
-│       └── 14_nomogram_odds_ratio.py  
+│   ├── 04_audit_eval/                 # 审计、验证与临床转化
+│   │   ├── 04_mimic_stat_audit.py        
+│   │   ├── 10_cross_cohort_audit.py
+│   │   ├── 11_external_validation_perf.py
+│   │   ├── 12_model_interpretation_shap.py
+│   │   ├── 13_clinical_calibration_dca.py 
+│   │   └── 14_nomogram_odds_ratio.py
+│   └── utils/                          # 工具中枢
+│       ├── translation_config.py          # 静态配置：特征中英翻译、物理单位映射    
+│       ├── feature_manager.py             # 字典维护：自动注入翻译/单位至 JSON  
+│       ├── force_update_blacklist.py      # 预处理控制：强制锁定无需 Log 变换的特征
+│       ├── feature_utils.py               # 文本渲染：LaTeX 下标美化 (PaO2 -> $PaO_2$)
+│       ├── plot_config.py                 # 视觉规范：出版级 DPI、字号、配色标准
+│       ├── plot_utils.py                  # 绘图计算：OR 偏移量计算与坐标轴自动缩放
+│       ├── skewed_cols_check.py           # 阶段审计：LASSO 特征子集与数据一致性校验
+│       └── post_analysis_tools.py         # 终产物审计：Step 07 资产完整性与 Table 3 复核
+│
 │
 ├── artifacts/                         # [核心] 资产中枢
 │   ├── features/                      
