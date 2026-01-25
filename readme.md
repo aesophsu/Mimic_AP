@@ -130,129 +130,91 @@
 project_root/
 │
 ├── data/
-│   ├── raw/                           # 原始数据快照 (Immutable)
-│   │   ├── mimic_raw_data.csv         # 01 步 SQL 提取产物
-│   │   └── eicu_raw_data.csv          # 08 步 SQL 提取产物 (依据 selected_features.json)
-│   ├── cleaned/                       # MIMIC 开发集中间产物
-│   │   ├── mimic_raw_scale.csv        # 02 步产出：Log 转换前的物理尺度数据 (用于 Table 1)
-│   │   └── mimic_processed.csv        # 03 步产出：Log 转换 + MICE 插补 + 标准化后的张量
-│   └── external/                          # eICU 验证产物
-│       ├── eicu_aligned.csv               # [09步] 经过字典对齐、单位换算后的物理值
-│       └── eicu_processed_{target}.csv    # [09步] 应用对应结局 Scaler 后的标准数据
+│   ├── raw/                           # [Immutable] 原始数据快照
+│   │   ├── mimic_raw_data.csv         # [01步] SQL 提取产物
+│   │   └── eicu_raw_data.csv          # [08步] SQL 提取产物
+│   ├── cleaned/                       # [Internal] MIMIC 中间产物
+│   │   ├── mimic_raw_scale.csv        # [02步] 物理清洗后数据 (用于 Table 1)
+│   │   └── mimic_processed.csv        # [03步] 建模张量 (Log+MICE+Z-Score)
+│   └── external/                      # [External] eICU 验证产物
+│       ├── eicu_aligned.csv           # [09步] 逻辑对齐后的物理值
+│       └── eicu_processed_{target}.csv# [09步] 结局专属推理张量 (已标准化)
 │
-├── scripts/                           # 14 步标准化工作流
-│   ├── 01_sql/                        # 数据库提取层 (提取 SQL)
+├── scripts/                           # 全流程标准化脚本
+│   ├── 01_sql/                        # 数据提取
 │   │   ├── 01_mimic_sql_extraction.sql
-│   │   ├── 08_eicu_sql_extraction.sql
-│   ├── 02_preprocess/                 # 特征工程层
-│   │   ├── 02_mimic_cleaning.py       # 物理清洗、字典对齐
-│   │   ├── 03_mimic_standardization.py # 剥离 Scaler、Log 转换、MICE 插补、保存持久化资产
+│   │   └── 08_eicu_external_extraction.sql
+│   ├── 02_preprocess/                 # 清洗与特征工程
+│   │   ├── 02_mimic_cleaning.py       
+│   │   ├── 03_mimic_standardization.py
 │   │   └── 09_eicu_alignment_cleaning.py
-│   ├── 03_modeling/                   # 模型竞赛层
-│   │   ├── 05_feature_selection_lasso.py # 执行 1-SE 准则、学术路径图、产出特征清单
-│   │   ├── 06_model_training_main.py  # 读取清单、Optuna 寻优、5 大模型竞赛、概率校准
-│   │   └── 07_optimal_cutoff_analysis.py # [规划] 计算 Youden Index 最佳截断值
-│   └── 04_audit_eval/                 # 验证与统计层
-│       ├── 04_mimic_stat_audit.py     # 深度描述统计、缺失值热图
-│       ├── 10_cross_cohort_audit.py
+│   ├── 03_modeling/                   # 建模与筛选
+│   │   ├── 05_feature_selection_lasso.py
+│   │   ├── 06_model_training_main.py  
+│   │   └── 07_optimal_cutoff_analysis.py
+│   └── 04_audit_eval/                 # 审计、验证与临床转化
+│       ├── 04_mimic_stat_audit.py     
+│       ├── 10_cross_cohort_audit.py   
 │       ├── 11_external_validation_perf.py 
-│       ├── 12_model_interpretation_shap.py # 针对精炼特征的全局/个体 SHAP 解释
-│       ├── 13_clinical_calibration_dca.py # 决策曲线分析 (DCA)
-│       └── 14_nomogram_odds_ratio.py      # 列线图与 OR 值导出
+│       ├── 12_model_interpretation_shap.py
+│       ├── 13_clinical_calibration_dca.py
+│       └── 14_nomogram_odds_ratio.py  
 │
-├── artifacts/                         # 项目的大脑：跨脚本调用的中枢资产
-│   ├── models/                            # 06步
-│   │   ├── performance_report.csv         # 06步：所有结局/算法的汇总性能表
-│   │   ├── global_diagnostic_summary.csv         # 07步：全结局对比汇总表
-│   │   ├── pof/
-│   │   │   ├── all_models_dict.pkl        # 06步：包含 5 种校准后的模型字典
-│   │   │   ├── scaler.pkl                 # 06步：针对 POF 特征子集的标准化器
-│   │   │   ├── imputer.pkl                # 06步：针对 POF 特征子集的插补器
-│   │   │   ├── selected_features.json     # 06步：该模型实际输入的特征清单
-│   │   │   ├── optuna_study.pkl           # 06步：XGBoost 参数寻优记录
-│   │   │   ├── eval_data.pkl              # 06 步：存入 X_test, y_test 和 subgroup_flag (No-Renal)
-│   │   │   ├── bootstrap_ci_stats.pkl   # 06 步：存入 Dict {'main': (low, high), 'sub': (low, high)}防止 07 步重复跑 Bootstrap，极大节省时间
-│   │   │   ├── feature_importance.csv   # 06 步产生：记录该结局下 5 大算法的特征权重排行
-│   │   │   ├── thresholds.json                # 07步：POF 最佳截断值资产
-│   │   │   └── internal_diagnostic_perf.csv   # 07步：POF 内部验证详细指标
-│   │   ├── mortality/
-│   │   │   ├── all_models_dict.pkl        # 06步：包含 5 种校准后的模型字典
-│   │   │   ├── scaler.pkl                 # 06步：针对 POF 特征子集的标准化器
-│   │   │   ├── imputer.pkl                # 06步：针对 POF 特征子集的插补器
-│   │   │   ├── selected_features.json     # 06步：该模型实际输入的特征清单
-│   │   │   ├── optuna_study.pkl           # 06步：XGBoost 参数寻优记录
-│   │   │   ├── eval_data.pkl              # 06步：测试集张量与亚组 Mask (用于后续统计)
-│   │   │   ├── bootstrap_ci_stats.pkl   # 06 步产生：存储全人群及“无肾损伤”亚组的 AUC 95% CI (Bootstrap 结果)
-│   │   │   ├── feature_importance.csv   # 06 步产生：记录该结局下 5 大算法的特征权重排行
-│   │   │   ├── thresholds.json                # 07步：死亡结局最佳截断值资产
-│   │   │   └── internal_diagnostic_perf.csv   # 07步：死亡结局内部验证详细指标
-│   │   ├── composite/
-│   │   │   ├── all_models_dict.pkl        # 06步：包含 5 种校准后的模型字典
-│   │   │   ├── scaler.pkl                 # 06步： 针对 POF 特征子集的标准化器
-│   │   │   ├── imputer.pkl                # 06步：针对 POF 特征子集的插补器
-│   │   │   ├── selected_features.json     # 06步：该模型实际输入的特征清单
-│   │   │   ├── optuna_study.pkl           # 06步：XGBoost 参数寻优记录
-│   │   │   ├── eval_data.pkl              # 06步：测试集张量与亚组 Mask (用于后续统计)
-│   │   │   ├── bootstrap_ci_stats.pkl   # 06 步产生：存储全人群及“无肾损伤”亚组的 AUC 95% CI (Bootstrap 结果)
-│   │   │   ├── feature_importance.csv   # 06 步产生：记录该结局下 5 大算法的特征权重排行
-│   │   │   ├── thresholds.json                # 07步：复合结局最佳截断值资产
-│   │   │   └── internal_diagnostic_perf.csv   # 07步：复合结局内部验证详细指标
-│   ├── scalers/                       # 尺度转换持久化文件 (核心！)
-│   │   ├── feature_metadata.json
-│   │   ├── mimic_scaler.joblib        # 03 步保存的 StandardScaler
-│   │   ├── mimic_mice_imputer.joblib  # 03 步保存的 MICE Imputer
-│   │   ├── skewed_cols_config.pkl     # 记录需要进行 Log1p 转换的列名
-│   │   └── train_assets_bundle.pkl    # 06 步：【枢纽】存储训练集特征列名顺序（Column Order）确保 eICU 输入模型的特征列顺序与训练时 100% 一致
-│   │── features/                      # 特征中枢配置
+├── artifacts/                         # [核心] 资产中枢
+│   ├── features/                      
 │   │   ├── feature_dictionary.json    # 特征定义全集
-│   │   └── selected_features.json     # 05 步 LASSO 产出的 Top 12 精简清单
-│   └── validation/                     # 专门存放 11 步外部验证的中间对比资产
-│       ├── eicu_vs_mimic_drift.json    # 由 10 步产生：记录人群偏移 (Population Drift) 的统计量
-│       └── external_perf_metrics.csv   # 由 11 步产生：eICU 盲测下的 AUC/Brier/Calibration 斜率
+│   │   └── selected_features.json     # [05步] 全局特征清单
+│   ├── scalers/                       # [03步] 预处理标尺
+│   │   ├── mimic_scaler.joblib        # 标准化器
+│   │   ├── mimic_mice_imputer.joblib  # 插补模型
+│   │   ├── train_assets_bundle.pkl    # [重要] 特征顺序记忆与 Log 策略
+│   │   └── skewed_cols_config.pkl     
+│   ├── models/                        # [06-07步] 结局专属资产
+│   │   ├── performance_report.csv     # 训练集性能汇总
+│   │   ├── global_diagnostic_summary.csv # [07步] 诊断指标汇总
+│   │   └── {target}/                  # (pof / mortality / composite)
+│   │       ├── all_models_dict.pkl    # 所有校准后的模型
+│   │       ├── deploy_bundle.pkl      # [06步] 部署包 (特征+Scaler+模型)
+│   │       ├── selected_features.json # 该结局专用特征
+│   │       ├── thresholds.json        # [07步] 最佳 Youden Index 截断值
+│   │       ├── eval_data.pkl          # 固化测试集 (X_test, y_test, mask)
+│   │       └── feature_importance.csv # 特征权重表
+│   └── validation/                    # [10-11步] 外部验证中间态
+│       ├── eicu_vs_mimic_drift.json   # [10步] 漂移审计报告
+│       └── external_perf_metrics.csv  # [11步] 外部验证指标缓存
 │
-├── results/                           # 产出层 (直接用于论文)
-│   ├── tables/                        # CSV 统计报表 (Table 1-4, OR表, 性能汇总)
-│   │   ├── Table3_Internal_Perf_pof.csv                # 07步
-│   │   ├── Table3_Internal_Perf_mortality_28d.csv      # 07步
-│   │   ├── Table3_Internal_Perf_composite_outcome.csv  # 07步
-│   │   ├── Table4_External_Perf_Summary.csv  # 11 步产生：eICU 验证集的效能总表 (直接入论文)
-│   │   └── Table_Subgroup_Analysis.csv       # 由 06/11 步产生：MIMIC 与 eICU 在 No-Renal 亚组下的稳健性对比
-│   └── figures/                       # 高清科研插图 (png/pdf/svg)
-│       ├── audit/                     # 缺失值热图、亚组分布图
-│       ├── lasso/                     # 05 步：Lasso CV 路径图与 1-SE 诊断图
-│       ├── pof/                           # 06步
-│       │   ├── ROC_Curve.png              # POF 结局多算法对比 ROC 图
-│       │   ├── Calibration_Curve.png      # POF 结局校准曲线图
-│       │   └── 07_Diagnostic_XGBoost.png  # 07步：带 Cutoff 标注的 ROC 与分布图
-│       ├── mortality/                     # 06步
-│       │   ├── ROC_Curve.png              # mortality 结局多算法对比 ROC 图
-│       │   ├── Calibration_Curve.png      # mortality 结局校准曲线图
-│       │   └── 07_Diagnostic_Logistic Regression.png  # 07步：带 Cutoff 标注的 ROC 与分布图
-│       └── composite/                     # 06步
-│       │   ├── ROC_Curve.png              # composite 结局多算法对比 ROC 图
-│       │   ├── Calibration_Curve.png      # composite 结局校准曲线图
-│       │   └── 07_Diagnostic_Random Forest.png  # 07步：带 Cutoff 标注的 ROC 与分布图
-│       ├── comparison/                 # 用于跨库对比的图表
-│       │   ├── ROC_MIMIC_vs_eICU_{target}.png # 由 11 步产生：展示模型在两库间的迁移表现
-│       │   └── Calibration_External_{target}.png # 由 11 步产生：eICU 验证集的校准度观察图
-│       ├── interpretation/             # 模型解释度图表 (12 步)
-│       │   ├── SHAP_Summary_{target}.png    # 由 12 步产生：特征贡献全局排名图
-│       │   └── SHAP_Force_Plot_Sample.png   # 由 12 步产生：单个高风险病例的解释图
-│       └── clinical/                   # 临床应用转化图表 (13/14 步)
-│           ├── DCA_Benefit_Curve.png        # 由 13 步产生：决策曲线 (Decision Curve Analysis)
-│           └── Nomogram_Visualization.png   # 由 14 步产生：临床医生可用的诺莫图评分板
+├── results/                           # [Paper] 论文最终产出
+│   ├── tables/                        
+│   │   ├── table1_baseline.csv        # [03步]
+│   │   ├── table2_renal_subgroup.csv  # [03步]
+│   │   ├── Table3_Final_Performance.csv # [07步] 内部验证终表
+│   │   ├── Table4_External_Validation.csv # [11步] 外部验证终表
+│   │   └── OR_Statistics_{target}.csv # [14步] 比值比统计表
+│   └── figures/                       
+│       ├── audit/                     
+│       │   └── mimic_missing_heatmap_pro.png # [04步]
+│       ├── lasso/                     
+│       │   ├── lasso_diag_{target}.png       # [05步]
+│       │   └── lasso_importance_{target}.png # [05步]
+│       ├── {target}/                  # 内部验证影像
+│       │   ├── {target}_ROC.pdf              # [06步]
+│       │   ├── {target}_Calibration.pdf      # [06步]
+│       │   └── 07_Diagnostic_{name}.pdf      # [07步] 阈值分布图
+│       ├── comparison/                # 外部验证影像
+│       │   ├── dist_drift_{feat}.png         # [10步] 分布漂移
+│       │   ├── ROC_External_{target}.pdf     # [11步] 跨库 ROC 对比
+│       │   └── Table4_Performance_Vis.png    # [11步]
+│       ├── interpretation/            # 可解释性影像
+│       │   ├── Fig4A_Summary_{target}.pdf    # [12步] 蜂群图
+│       │   ├── Fig4B_Force_{target}.pdf      # [12步] 个体决策图
+│       │   └── Fig4C_Dep_{target}.png        # [12步] 依赖图
+│       └── clinical/                  # 临床转化影像
+│           ├── Fig5_DCA_Calibration_{target}.pdf # [13步] DCA 决策曲线
+│           ├── Forest_Plot_{target}.pdf      # [14步] 森林图
+│           └── Nomogram_{target}.pdf         # [14步] 列线图
 │
-├── logs/                              # 运行审计与 Optuna 寻优日志
-└── requirements.txt                   # 环境依赖 (shap, optuna, xgboost, tableone等)
+└── logs/                              # 系统运行日志与 Optuna 历史
 
 ```
-
----
-
-### 🛠️ 流程核心逻辑保障
-
-1. **特征对齐中枢**：通过 `feature_dictionary.json` 解决了不同数据库间“同名不同义”或“同义不同名”的问题，是确保外部验证成功的关键。
-2. **资产分层管理**：将 `thresholds.json` 与模型文件绑定，确保从概率输出到临床决策的每一步都有据可查。
-3. **结果隔离性**：`results/figures/` 的子文件夹设计，让您在处理三种不同临床终点时，图表输出井然有序，绝不混淆。
 
 ---
