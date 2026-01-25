@@ -1,101 +1,151 @@
 import json
 import os
-import pandas as pd
+from typing import Dict, Any
+
+# ======================
+# Load translation config
+# ======================
+try:
+    from translation_config import TRANSLATION_MAP
+except ImportError:
+    print("\033[91m[!] 错误: 请确保 translation_config.py 在当前目录下\033[0m")
+    TRANSLATION_MAP: Dict[str, Dict[str, Any]] = {}
+
+PATH = "../../artifacts/features/feature_dictionary.json"
+
 
 class FeatureDictionaryManager:
-    def __init__(self, dict_path='../../artifacts/features/feature_dictionary.json'):
-        self.dict_path = dict_path
-        self.feature_dict = {}
-        # 确保目录存在
-        os.makedirs(os.path.dirname(self.dict_path), exist_ok=True)
-        if os.path.exists(self.dict_path):
-            self.load_dict()
+    def __init__(self, json_path: str):
+        self.json_path = json_path
+        self.data = self._load_json()
 
-    def _get_physiological_presets(self, col):
-        """
-        核心预设：为常见临床指标自动分配单位和生理极限范围。
-        您也可以在生成 JSON 后手动修改这些值。
-        """
-        presets = {
-            # 指标关键字: (单位, 生理最小极限, 生理最大极限)
-            'temperature': ("°C", 30.0, 45.0),
-            'heart_rate': ("bpm", 20, 250),
-            'respiratory_rate': ("bpm", 0, 100),
-            'glucose': ("mg/dL", 10, 1500),
-            'creatinine': ("mg/dL", 0.1, 25.0),
-            'bun': ("mg/dL", 1, 250),
-            'lactate': ("mmol/L", 0.1, 35.0),
-            'ph': ("units", 6.5, 8.2),
-            'amylase': ("IU/L", 0, 15000),
-            'lipase': ("IU/L", 0, 15000),
-            'spo2': ("%", 40, 100),
-            'bilirubin': ("mg/dL", 0, 60),
-            'bmi': ("kg/m2", 10, 80),
-            'pao2fio2ratio': ("mmHg", 10, 800)
-        }
-        
-        col_lower = col.lower()
-        for key, (unit, p_min, p_max) in presets.items():
-            if key in col_lower:
-                return unit, p_min, p_max
-        return "TBD", None, None
+    # ---------- IO ----------
+    def _load_json(self) -> Dict[str, Dict[str, Any]]:
+        if not os.path.exists(self.json_path):
+            print(f"\033[91m[!] 错误: 未找到文件 {self.json_path}\033[0m")
+            return {}
+        with open(self.json_path, "r", encoding="utf-8") as f:
+            return json.load(f)
 
-    def init_from_dataframe(self, df, overwrite=False):
-        if os.path.exists(self.dict_path) and not overwrite:
-            print(f"⚠️ 字典已存在，跳过。如需覆盖请设置 overwrite=True")
+    def save_json(self) -> None:
+        if not self.data:
             return
+        with open(self.json_path, "w", encoding="utf-8") as f:
+            json.dump(self.data, f, indent=4, ensure_ascii=False)
+        print(f"\n\033[92m[*] 成功保存更新至: {self.json_path}\033[0m")
 
-        for col in df.columns:
-            # 1. 自动分类逻辑
-            category = 'others'
-            if any(trend in col.lower() for trend in ['slope', 'change', 'trend']): category = 'trend'
-            elif any(lab in col.lower() for lab in ['max', 'min', 'avg', 'mean']): category = 'lab_test'
-            elif col in ['age', 'gender', 'bmi', 'admission_age']: category = 'demographic'
-            elif any(out in col.lower() for out in ['pof', 'death', 'mortality', 'outcome']): category = 'outcome'
+    # ---------- Utilities ----------
+    @staticmethod
+    def _needs_completion(cn_name: str) -> bool:
+        return (not cn_name) or "(待补充)" in cn_name or cn_name == "MISSING"
 
-            # 2. 获取预设的生理阈值与单位
-            unit, physio_min, physio_max = self._get_physiological_presets(col)
+    @staticmethod
+    def _default_en_name(key: str) -> str:
+        return key.replace("_", " ").title()
 
-            # 3. 构造特征元数据
-            self.feature_dict[col] = {
-                "standard_name": col,
-                "mimic_source_col": col,
-                "eicu_source_col": "",
-                "unit": unit,
-                "category": category,
-                "is_model_input": True if category not in ['outcome', 'others'] else False,
-                "ref_range": {
-                    "logical_min": physio_min, # 生理极限最小值
-                    "logical_max": physio_max  # 生理极限最大值
-                },
-                "conversion_factor": 1.0       # 用于跨库对齐时的倍率
-            }
-        
-        self.save_dict()
-        print(f"✅ 成功！字典已生成（含生理范围占位符）: {self.dict_path}")
+    # ---------- Display ----------
+    def _print_table(self, items, title: str, color_code: str = "94") -> None:
+        print(f"\n\033[{color_code}m" + "=" * 130)
+        print(f" {title} ".center(130, "="))
+        print(f"{'Key':<30} | {'EN Name':<40} | {'CN Name':<25} | {'Unit':<15}")
+        print("-" * 130 + "\033[0m")
 
-    def load_dict(self):
-        with open(self.dict_path, 'r', encoding='utf-8') as f:
-            self.feature_dict = json.load(f)
+        for key, info in items:
+            en = info.get("display_name_en", "MISSING")
+            cn = info.get("display_name_cn", "MISSING")
+            unit = info.get("unit", "")
+            row_color = "\033[93m" if self._needs_completion(cn) else ""
+            print(
+                f"{row_color}{key:<30} | {en:<40} | {cn:<25} | {unit:<15}\033[0m"
+            )
 
-    def save_dict(self):
-        with open(self.dict_path, 'w', encoding='utf-8') as f:
-            json.dump(self.feature_dict, f, ensure_ascii=False, indent=4)
+        print("\033[" + color_code + "m" + "=" * 130 + "\033[0m\n")
 
-# --- 独立运行入口 ---
+    # ---------- Core logic ----------
+    def inject_and_check(self, translation_map: Dict[str, Dict[str, Any]]) -> bool:
+        """
+        Inject EN/CN display names and units from translation_map,
+        and perform completeness audit.
+        """
+        print("\n\033[94m>>> 正在分析特征字典（翻译 + 单位）...\033[0m")
+
+        cnt_update = cnt_pending = cnt_skip = cnt_unit = 0
+
+        for key, feature in self.data.items():
+            lower_key = key.lower()
+            current_cn = feature.get("display_name_cn", "")
+
+            # ===== Case A: Explicit mapping exists =====
+            if lower_key in translation_map:
+                mapping = translation_map[lower_key]
+
+                if mapping.get("en"):
+                    feature["display_name_en"] = mapping["en"]
+                    feature["display_name"] = mapping["en"]
+
+                if mapping.get("cn"):
+                    feature["display_name_cn"] = mapping["cn"]
+
+                cnt_update += 1
+
+                # --- unit injection (idempotent) ---
+                if "unit" in mapping and feature.get("unit") != mapping["unit"]:
+                    feature["unit"] = mapping["unit"]
+                    cnt_unit += 1
+
+            # ===== Case B: Missing / placeholder translation =====
+            elif self._needs_completion(current_cn):
+                def_en = self._default_en_name(key)
+                feature.update(
+                    {
+                        "display_name_en": def_en,
+                        "display_name_cn": f"{def_en}(待补充)",
+                        "display_name": def_en,
+                    }
+                )
+                cnt_pending += 1
+
+            # ===== Case C: Already complete =====
+            else:
+                cnt_skip += 1
+
+        print(
+            f"[*] 注入摘要: "
+            f"\033[92m翻译更新 {cnt_update}\033[0m, "
+            f"\033[96m单位注入 {cnt_unit}\033[0m, "
+            f"\033[93m待补充 {cnt_pending}\033[0m, "
+            f"\033[37m无需改动 {cnt_skip}\033[0m"
+        )
+
+        # ===== Final audit =====
+        missing_items = [
+            (k, v)
+            for k, v in self.data.items()
+            if self._needs_completion(v.get("display_name_cn", ""))
+        ]
+
+        if missing_items:
+            self._print_table(
+                missing_items,
+                f" 剩余 {len(missing_items)} 个特征需要完善翻译或单位 ",
+                "93",
+            )
+            return False
+
+        print("\033[92m✨ 所有特征翻译与单位均已完成！\033[0m")
+        return True
+
+
+# ======================
+# Entrypoint
+# ======================
 if __name__ == "__main__":
-    raw_data_path = '../../data/raw/mimic_raw_data.csv'
-    
-    if os.path.exists(raw_data_path):
-        print(f"读取数据表头: {raw_data_path}")
-        df_raw = pd.read_csv(raw_data_path, nrows=5)
-        
-        manager = FeatureDictionaryManager()
-        manager.init_from_dataframe(df_raw, overwrite=True)
-        
-        print("-" * 30)
-        print("💡 下一步操作建议：")
-        print("1. 打开 feature_dictionary.json 补全 TBD 的单位。")
-        print("2. 针对特殊指标，调整 ref_range 以便在 02_cleaning 脚本中执行自动剔除。")
-    else:
-        print(f"❌ 错误：找不到文件 {raw_data_path}")
+    manager = FeatureDictionaryManager(PATH)
+    all_finished = manager.inject_and_check(TRANSLATION_MAP)
+    manager.save_json()
+
+    if not all_finished:
+        print(
+            "\033[93m[提示] 请根据上方 Key，"
+            "在 translation_config.py 中补充缺失的翻译或单位。\033[0m"
+        )
