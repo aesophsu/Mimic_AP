@@ -17,28 +17,61 @@ class FeatureSpec:
     latex: Optional[str] = None
     unit: Optional[str] = None
     unit_si: Optional[str] = None
-    convert: Optional[str] = None  # name of conversion function
+    convert: Optional[str] = None  # name of unit conversion function
 
     # =====================
     # Preprocessing
     # =====================
     log_transform: bool = False
     zscore: bool = False
+
+    # ⚠️ 默认 None，由 pipeline 根据 table_role 决定
     impute_method: Optional[
         Literal["median", "mean", "mice", "constant_zero", "normal"]
-    ] = "median"
+    ] = None
+
+    # =====================
+    # Temporal semantics
+    # =====================
+    time_aggregation: Optional[
+        Literal[
+            "first",
+            "last",
+            "min",
+            "max",
+            "mean",
+            "median",
+            "slope",
+            "trend",
+            "count"     # NEW: measurement frequency
+        ]
+    ] = None
+
+    time_anchor: Optional[
+        Literal[
+            "icu_admit",
+            "hospital_admit",
+            "event_onset"
+        ]
+    ] = None
+
+    # NEW: observation window length (in hours)
+    time_window_hr: Optional[float] = None
+    # Example: 24, 48, 72
 
     # =====================
     # Modeling control
     # =====================
     clinical_domain: str = "other"
     allow_in_model: bool = True
-    allow_in_selection: bool = True  # feature selection (e.g., LASSO)
+    allow_in_selection: bool = True
+
     table_role: Literal[
-        "feature",   # model input
-        "outcome",   # primary / secondary outcome
-        "id",        # identifiers (subject_id, hadm_id)
-        "group"      # grouping variables (sex, comorbidity)
+        "feature",      # model input
+        "outcome",      # primary / secondary outcome
+        "id",           # identifiers
+        "group",        # grouping variable (sex, CKD)
+        "confounder"    # NEW: adjusted but not selected
     ] = "feature"
 
     # =====================
@@ -51,7 +84,4 @@ class FeatureSpec:
     # Metadata (cohort-specific)
     # =====================
     missing_rate: Optional[float] = None
-    # NOTE:
-    # - cohort- and database-specific
-    # - populated post-profiling
-    # - NOT used in modeling logic
+    # populated post-profiling, never drives preprocessing
