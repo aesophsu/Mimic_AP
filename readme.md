@@ -3,7 +3,7 @@
 ### 第一阶段：数据工程与资产基石 (Foundation)
 
 * **01_mimic_sql_extraction.sql**: [原始提取] 建立 MIMIC 临床队列并关联结局指标，产出 `data/raw/mimic_raw_data.csv`。
-* **02_mimic_cleaning.py**: [审计与对齐] 执行结局指标逻辑重构、单位换算、生理极值清洗与 1%-99% 盖帽处理，产出 data/cleaned/mimic_raw_scale.csv。
+* **02_mimic_cleaning.py**: [审计与对齐] 执行结局指标逻辑重构、单位换算、生理极值清洗与 1%-99% 盖帽处理，产出 `data/cleaned/mimic_raw_scale.csv`。
 * **03_mimic_standardization.py**: [张量化] 执行特征缩放与中位数/MICE插补，产出 `data/cleaned/mimic_processed.csv` 与关键资产 `artifacts/assets/mimic_scaler.joblib`。
 
 ### 第二阶段：描述统计与审计 (Audit)
