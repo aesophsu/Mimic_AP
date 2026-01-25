@@ -4,8 +4,14 @@
 
 * **01_mimic_sql_extraction.sql**: [原始提取] 建立 MIMIC 临床队列并关联结局指标，产出 `data/raw/mimic_raw_data.csv`。
 * **02_mimic_cleaning.py**: [审计与对齐] 执行结局指标逻辑重构、单位换算、生理极值清洗与 1%-99% 盖帽处理，产出 `data/cleaned/mimic_raw_scale.csv`。
-* **03_mimic_standardization.py**: [张量化] 执行特征缩放与中位数/MICE插补，产出 `data/cleaned/mimic_processed.csv` 与关键资产 `artifacts/assets/mimic_scaler.joblib`。
+* **03_mimic_standardization.py**: [张量化与基线] 执行亚组构建、Table 1/2 自动化生成、Log 转换、MICE 插补与 Z-Score 标准化。
+* **核心产物**：
+1. **建模张量**：`data/cleaned/mimic_processed.csv` (用于特征筛选与建模)；
+2. **资产包**：`artifacts/scalers/train_assets_bundle.pkl` (包含 Log 策略、特征顺序与中位数记忆)；
+3. **转换器**：`mimic_scaler.joblib` (标准化标尺) 与 `mimic_mice_imputer.joblib` (插补模型)；
+4. **统计表**：`results/tables/table1_baseline.csv` 与 `table2_renal_subgroup.csv`。
 
+   
 ### 第二阶段：描述统计与审计 (Audit)
 
 * **04_mimic_stat_audit.py**: [基线分析] 自动化生成 Table 1 基线表与缺失值分布图，产出 `results/tables/table1_baseline.csv`。
