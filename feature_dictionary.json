@@ -1,0 +1,1740 @@
+{
+    "subject_id": {
+        "standard_name": "subject_id",
+        "mimic_source_col": "subject_id",
+        "eicu_source_col": "uniquepid",
+        "unit": null,
+        "category": "others",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": null,
+            "logical_max": null
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Subject ID",
+        "display_name_cn": "患者编号",
+        "display_name": "Subject ID"
+    },
+    "hadm_id": {
+        "standard_name": "hadm_id",
+        "mimic_source_col": "hadm_id",
+        "eicu_source_col": "patienthealthsystemstayid",
+        "unit": null,
+        "category": "others",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": null,
+            "logical_max": null
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Hospital Admission ID",
+        "display_name_cn": "住院号",
+        "display_name": "Hospital Admission ID"
+    },
+    "stay_id": {
+        "standard_name": "stay_id",
+        "mimic_source_col": "stay_id",
+        "eicu_source_col": "patientunitstayid",
+        "unit": null,
+        "category": "others",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": null,
+            "logical_max": null
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "ICU Stay ID",
+        "display_name_cn": "ICU留滞ID",
+        "display_name": "ICU Stay ID"
+    },
+    "intime": {
+        "standard_name": "intime",
+        "mimic_source_col": "intime",
+        "eicu_source_col": "hospitaladmittime",
+        "unit": null,
+        "category": "others",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": null,
+            "logical_max": null
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "ICU Admission Time",
+        "display_name_cn": "入ICU时间",
+        "display_name": "ICU Admission Time"
+    },
+    "los": {
+        "standard_name": "los",
+        "mimic_source_col": "los",
+        "eicu_source_col": "unitlos",
+        "unit": "days",
+        "category": "others",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 365
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Length of Stay",
+        "display_name_cn": "住院天数",
+        "display_name": "Length of Stay"
+    },
+    "admittime": {
+        "standard_name": "admittime",
+        "mimic_source_col": "admittime",
+        "eicu_source_col": "hospitaladmittime",
+        "unit": null,
+        "category": "others",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": null,
+            "logical_max": null
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Hospital Admission Time",
+        "display_name_cn": "入院时间",
+        "display_name": "Hospital Admission Time"
+    },
+    "dischtime": {
+        "standard_name": "dischtime",
+        "mimic_source_col": "dischtime",
+        "eicu_source_col": "hospitaldischargetime",
+        "unit": null,
+        "category": "others",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": null,
+            "logical_max": null
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Hospital Discharge Time",
+        "display_name_cn": "出院时间",
+        "display_name": "Hospital Discharge Time"
+    },
+    "deathtime": {
+        "standard_name": "deathtime",
+        "mimic_source_col": "deathtime",
+        "eicu_source_col": "unitdischargetime",
+        "unit": null,
+        "category": "outcome",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": null,
+            "logical_max": null
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Time of Death",
+        "display_name_cn": "死亡时间",
+        "display_name": "Time of Death"
+    },
+    "dod": {
+        "standard_name": "date_of_death",
+        "mimic_source_col": "dod",
+        "eicu_source_col": "hospitaldischargestatus",
+        "unit": null,
+        "category": "others",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": null,
+            "logical_max": null
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Date of Death",
+        "display_name_cn": "死亡日期",
+        "display_name": "Date of Death"
+    },
+    "gender": {
+        "standard_name": "gender",
+        "mimic_source_col": "gender",
+        "eicu_source_col": "gender",
+        "unit": null,
+        "category": "demographic",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": null,
+            "logical_max": null
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Gender",
+        "display_name_cn": "性别",
+        "display_name": "Gender"
+    },
+    "admission_age": {
+        "standard_name": "age",
+        "mimic_source_col": "admission_age",
+        "eicu_source_col": "age",
+        "unit": "years",
+        "category": "demographic",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 18,
+            "logical_max": 120
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Age at Admission",
+        "display_name_cn": "入院年龄",
+        "display_name": "Age at Admission"
+    },
+    "weight_admit": {
+        "standard_name": "weight",
+        "mimic_source_col": "weight_admit",
+        "eicu_source_col": "admissionweight",
+        "unit": "kg",
+        "category": "others",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": 30,
+            "logical_max": 300
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Admission Weight",
+        "display_name_cn": "入院体重",
+        "display_name": "Admission Weight"
+    },
+    "height_admit": {
+        "standard_name": "height",
+        "mimic_source_col": "height_admit",
+        "eicu_source_col": "admissionheight",
+        "unit": "cm",
+        "category": "others",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": 100,
+            "logical_max": 250
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Admission Height",
+        "display_name_cn": "入院身高",
+        "display_name": "Admission Height"
+    },
+    "bmi": {
+        "standard_name": "bmi",
+        "mimic_source_col": "bmi",
+        "eicu_source_col": "derived",
+        "unit": "kg/m²",
+        "category": "demographic",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 10,
+            "logical_max": 80
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Body Mass Index (BMI)",
+        "display_name_cn": "体质指数(BMI)",
+        "display_name": "Body Mass Index (BMI)"
+    },
+    "pof": {
+        "standard_name": "persistent_organ_failure",
+        "mimic_source_col": "pof",
+        "eicu_source_col": "derived_label",
+        "unit": null,
+        "category": "outcome",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 1
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Persistent Organ Failure",
+        "display_name_cn": "持续性器官功能衰竭",
+        "display_name": "Persistent Organ Failure"
+    },
+    "resp_pof": {
+        "standard_name": "respiratory_pof",
+        "mimic_source_col": "resp_pof",
+        "eicu_source_col": "derived_label",
+        "unit": null,
+        "category": "outcome",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 1
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Respiratory POF",
+        "display_name_cn": "呼吸系统POF",
+        "display_name": "Respiratory POF"
+    },
+    "cv_pof": {
+        "standard_name": "cardiovascular_pof",
+        "mimic_source_col": "cv_pof",
+        "eicu_source_col": "derived_label",
+        "unit": null,
+        "category": "outcome",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 1
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Cardiovascular POF",
+        "display_name_cn": "心血管系统POF",
+        "display_name": "Cardiovascular POF"
+    },
+    "renal_pof": {
+        "standard_name": "renal_pof",
+        "mimic_source_col": "renal_pof",
+        "eicu_source_col": "derived_label",
+        "unit": null,
+        "category": "outcome",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 1
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Renal POF",
+        "display_name_cn": "肾脏系统POF",
+        "display_name": "Renal POF"
+    },
+    "mortality_28d": {
+        "standard_name": "mortality_28d",
+        "mimic_source_col": "mortality_28d",
+        "eicu_source_col": "derived_label",
+        "unit": null,
+        "category": "outcome",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 1
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "28-Day Mortality",
+        "display_name_cn": "28天死亡率",
+        "display_name": "28-Day Mortality"
+    },
+    "early_death_24_48h": {
+        "standard_name": "early_death_24_48h",
+        "mimic_source_col": "early_death_24_48h",
+        "eicu_source_col": "derived_label",
+        "unit": null,
+        "category": "outcome",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 1
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Early Death (24–48 h)",
+        "display_name_cn": "早期死亡(24–48小时)",
+        "display_name": "Early Death (24–48 h)"
+    },
+    "composite_outcome": {
+        "standard_name": "composite_outcome",
+        "mimic_source_col": "composite_outcome",
+        "eicu_source_col": "derived_label",
+        "unit": null,
+        "category": "outcome",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 1
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Composite Outcome",
+        "display_name_cn": "复合终点",
+        "display_name": "Composite Outcome"
+    },
+    "sofa_score": {
+        "standard_name": "sofa_score",
+        "mimic_source_col": "sofa_score",
+        "eicu_source_col": "sofatotal",
+        "unit": null,
+        "category": "score",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 24
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "SOFA Score",
+        "display_name_cn": "SOFA评分",
+        "display_name": "SOFA Score"
+    },
+    "apsiii": {
+        "standard_name": "apsiii_score",
+        "mimic_source_col": "apsiii",
+        "eicu_source_col": "apsiii",
+        "unit": null,
+        "category": "score",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 299
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "APS-III Score",
+        "display_name_cn": "APS-III评分",
+        "display_name": "APS-III Score"
+    },
+    "sapsii": {
+        "standard_name": "sapsii_score",
+        "mimic_source_col": "sapsii",
+        "eicu_source_col": "sapsii",
+        "unit": null,
+        "category": "score",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 163
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "SAPS-II Score",
+        "display_name_cn": "SAPS-II评分",
+        "display_name": "SAPS-II Score"
+    },
+    "oasis": {
+        "standard_name": "oasis_score",
+        "mimic_source_col": "oasis",
+        "eicu_source_col": "derived",
+        "unit": null,
+        "category": "score",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 70
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "OASIS Score",
+        "display_name_cn": "OASIS评分",
+        "display_name": "OASIS Score"
+    },
+    "lods": {
+        "standard_name": "lods_score",
+        "mimic_source_col": "lods",
+        "eicu_source_col": "derived",
+        "unit": null,
+        "category": "score",
+        "is_model_input": false,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 22
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "LODS Score",
+        "display_name_cn": "LODS评分",
+        "display_name": "LODS Score"
+    },
+    "wbc_min": {
+        "standard_name": "wbc_min",
+        "mimic_source_col": "wbc_min",
+        "eicu_source_col": "WBC",
+        "unit": "×10⁹/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.1,
+            "logical_max": 150.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "WBC Count (Min)",
+        "display_name_cn": "白细胞计数(最小值)",
+        "display_name": "WBC Count (Min)"
+    },
+    "wbc_max": {
+        "standard_name": "wbc_max",
+        "mimic_source_col": "wbc_max",
+        "eicu_source_col": "WBC",
+        "unit": "×10⁹/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.1,
+            "logical_max": 150.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "WBC Count (Max)",
+        "display_name_cn": "白细胞计数(最大值)",
+        "display_name": "WBC Count (Max)"
+    },
+    "hematocrit_min": {
+        "standard_name": "hematocrit_min",
+        "mimic_source_col": "hematocrit_min",
+        "eicu_source_col": "Hct",
+        "unit": "%",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 5.0,
+            "logical_max": 75.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Hematocrit (Min)",
+        "display_name_cn": "红细胞压积(最小值)",
+        "display_name": "Hematocrit (Min)"
+    },
+    "hematocrit_max": {
+        "standard_name": "hematocrit_max",
+        "mimic_source_col": "hematocrit_max",
+        "eicu_source_col": "Hct",
+        "unit": "%",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 5.0,
+            "logical_max": 75.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Hematocrit (Max)",
+        "display_name_cn": "红细胞压积(最大值)",
+        "display_name": "Hematocrit (Max)"
+    },
+    "hemoglobin_min": {
+        "standard_name": "hemoglobin_min",
+        "mimic_source_col": "hemoglobin_min",
+        "eicu_source_col": "Hgb",
+        "unit": "g/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 2.0,
+            "logical_max": 25.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Hemoglobin (Min)",
+        "display_name_cn": "血红蛋白(最小值)",
+        "display_name": "Hemoglobin (Min)"
+    },
+    "hemoglobin_max": {
+        "standard_name": "hemoglobin_max",
+        "mimic_source_col": "hemoglobin_max",
+        "eicu_source_col": "Hgb",
+        "unit": "g/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 2.0,
+            "logical_max": 25.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Hemoglobin (Max)",
+        "display_name_cn": "血红蛋白(最大值)",
+        "display_name": "Hemoglobin (Max)"
+    },
+    "platelets_min": {
+        "standard_name": "platelets_min",
+        "mimic_source_col": "platelets_min",
+        "eicu_source_col": "platelets x 1000",
+        "unit": "×10⁹/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 5.0,
+            "logical_max": 2000.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Platelets (Min)",
+        "display_name_cn": "血小板计数(最小值)",
+        "display_name": "Platelets (Min)"
+    },
+    "platelets_max": {
+        "standard_name": "platelets_max",
+        "mimic_source_col": "platelets_max",
+        "eicu_source_col": "platelets x 1000",
+        "unit": "×10⁹/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 5.0,
+            "logical_max": 2000.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Platelets (Max)",
+        "display_name_cn": "血小板计数(最大值)",
+        "display_name": "Platelets (Max)"
+    },
+    "albumin_min": {
+        "standard_name": "albumin_min",
+        "mimic_source_col": "albumin_min",
+        "eicu_source_col": "albumin",
+        "unit": "g/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.5,
+            "logical_max": 6.5
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Albumin (Min)",
+        "display_name_cn": "白蛋白(最小值)",
+        "display_name": "Albumin (Min)"
+    },
+    "albumin_max": {
+        "standard_name": "albumin_max",
+        "mimic_source_col": "albumin_max",
+        "eicu_source_col": "albumin",
+        "unit": "g/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.5,
+            "logical_max": 6.5
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Albumin (Max)",
+        "display_name_cn": "白蛋白(最大值)",
+        "display_name": "Albumin (Max)"
+    },
+    "aniongap_min": {
+        "standard_name": "aniongap_min",
+        "mimic_source_col": "aniongap_min",
+        "eicu_source_col": "anion gap",
+        "unit": "mmol/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 1.0,
+            "logical_max": 60.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Anion Gap (Min)",
+        "display_name_cn": "阴离子间隙(最小值)",
+        "display_name": "Anion Gap (Min)"
+    },
+    "aniongap_max": {
+        "standard_name": "aniongap_max",
+        "mimic_source_col": "aniongap_max",
+        "eicu_source_col": "anion gap",
+        "unit": "mmol/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 1.0,
+            "logical_max": 60.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Anion Gap (Max)",
+        "display_name_cn": "阴离子间隙(最大值)",
+        "display_name": "Anion Gap (Max)"
+    },
+    "bicarbonate_min": {
+        "standard_name": "bicarbonate_min",
+        "mimic_source_col": "bicarbonate_min",
+        "eicu_source_col": "bicarbonate",
+        "unit": "mmol/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 2.0,
+            "logical_max": 60.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Bicarbonate (Min)",
+        "display_name_cn": "碳酸氢盐(最小值)",
+        "display_name": "Bicarbonate (Min)"
+    },
+    "bicarbonate_max": {
+        "standard_name": "bicarbonate_max",
+        "mimic_source_col": "bicarbonate_max",
+        "eicu_source_col": "bicarbonate",
+        "unit": "mmol/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 2.0,
+            "logical_max": 60.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Bicarbonate (Max)",
+        "display_name_cn": "碳酸氢盐(最大值)",
+        "display_name": "Bicarbonate (Max)"
+    },
+    "bun_min": {
+        "standard_name": "bun_min",
+        "mimic_source_col": "bun_min",
+        "eicu_source_col": "BUN",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 1,
+            "logical_max": 250
+        },
+        "conversion_factor": 2.801,
+        "needs_log_transform": true,
+        "display_name_en": "Blood Urea Nitrogen (Min)",
+        "display_name_cn": "尿素氮(最小值)",
+        "display_name": "Blood Urea Nitrogen (Min)"
+    },
+    "bun_max": {
+        "standard_name": "bun_max",
+        "mimic_source_col": "bun_max",
+        "eicu_source_col": "BUN",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 1,
+            "logical_max": 250
+        },
+        "conversion_factor": 2.801,
+        "needs_log_transform": true,
+        "display_name_en": "Blood Urea Nitrogen (Max)",
+        "display_name_cn": "尿素氮(最大值)",
+        "display_name": "Blood Urea Nitrogen (Max)"
+    },
+    "lab_calcium_min": {
+        "standard_name": "calcium_min",
+        "mimic_source_col": "lab_calcium_min",
+        "eicu_source_col": "calcium",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 1.0,
+            "logical_max": 20.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Serum Calcium (Min)",
+        "display_name_cn": "血钙(最小值)",
+        "display_name": "Serum Calcium (Min)"
+    },
+    "calcium_max": {
+        "standard_name": "calcium_max",
+        "mimic_source_col": "calcium_max",
+        "eicu_source_col": "calcium",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 1.0,
+            "logical_max": 20.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Serum Calcium (Max)",
+        "display_name_cn": "血钙(最大值)",
+        "display_name": "Serum Calcium (Max)"
+    },
+    "chloride_min": {
+        "standard_name": "chloride_min",
+        "mimic_source_col": "chloride_min",
+        "eicu_source_col": "chloride",
+        "unit": "mmol/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 60,
+            "logical_max": 160
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Chloride (Min)",
+        "display_name_cn": "氯离子(最小值)",
+        "display_name": "Chloride (Min)"
+    },
+    "chloride_max": {
+        "standard_name": "chloride_max",
+        "mimic_source_col": "chloride_max",
+        "eicu_source_col": "chloride",
+        "unit": "mmol/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 60,
+            "logical_max": 160
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Chloride (Max)",
+        "display_name_cn": "氯离子(最大值)",
+        "display_name": "Chloride (Max)"
+    },
+    "creatinine_min": {
+        "standard_name": "creatinine_min",
+        "mimic_source_col": "creatinine_min",
+        "eicu_source_col": "creatinine",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.1,
+            "logical_max": 25.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Creatinine (Min)",
+        "display_name_cn": "肌酐(最小值)",
+        "display_name": "Creatinine (Min)"
+    },
+    "creatinine_max": {
+        "standard_name": "creatinine_max",
+        "mimic_source_col": "creatinine_max",
+        "eicu_source_col": "creatinine",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.1,
+            "logical_max": 25.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Creatinine (Max)",
+        "display_name_cn": "肌酐(最大值)",
+        "display_name": "Creatinine (Max)"
+    },
+    "glucose_min": {
+        "standard_name": "glucose_min",
+        "mimic_source_col": "glucose_min",
+        "eicu_source_col": "glucose",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 10,
+            "logical_max": 1500
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Glucose (Min)",
+        "display_name_cn": "血糖(最小值)",
+        "display_name": "Glucose (Min)"
+    },
+    "glucose_max": {
+        "standard_name": "glucose_max",
+        "mimic_source_col": "glucose_max",
+        "eicu_source_col": "glucose",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 10,
+            "logical_max": 1500
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Glucose (Max)",
+        "display_name_cn": "血糖(最大值)",
+        "display_name": "Glucose (Max)"
+    },
+    "sodium_min": {
+        "standard_name": "sodium_min",
+        "mimic_source_col": "sodium_min",
+        "eicu_source_col": "sodium",
+        "unit": "mmol/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 90,
+            "logical_max": 180
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Sodium (Min)",
+        "display_name_cn": "血钠(最小值)",
+        "display_name": "Sodium (Min)"
+    },
+    "sodium_max": {
+        "standard_name": "sodium_max",
+        "mimic_source_col": "sodium_max",
+        "eicu_source_col": "sodium",
+        "unit": "mmol/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 90,
+            "logical_max": 180
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Sodium (Max)",
+        "display_name_cn": "血钠(最大值)",
+        "display_name": "Sodium (Max)"
+    },
+    "potassium_min": {
+        "standard_name": "potassium_min",
+        "mimic_source_col": "potassium_min",
+        "eicu_source_col": "potassium",
+        "unit": "mmol/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 1.0,
+            "logical_max": 10.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Potassium (Min)",
+        "display_name_cn": "血钾(最小值)",
+        "display_name": "Potassium (Min)"
+    },
+    "potassium_max": {
+        "standard_name": "potassium_max",
+        "mimic_source_col": "potassium_max",
+        "eicu_source_col": "potassium",
+        "unit": "mmol/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 1.0,
+            "logical_max": 10.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Potassium (Max)",
+        "display_name_cn": "血钾(最大值)",
+        "display_name": "Potassium (Max)"
+    },
+    "bilirubin_total_min": {
+        "standard_name": "bilirubin_total_min",
+        "mimic_source_col": "bilirubin_total_min",
+        "eicu_source_col": "total bilirubin",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.1,
+            "logical_max": 60.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Total Bilirubin (Min)",
+        "display_name_cn": "总胆红素(最小值)",
+        "display_name": "Total Bilirubin (Min)"
+    },
+    "bilirubin_total_max": {
+        "standard_name": "bilirubin_total_max",
+        "mimic_source_col": "bilirubin_total_max",
+        "eicu_source_col": "total bilirubin",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.1,
+            "logical_max": 60.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Total Bilirubin (Max)",
+        "display_name_cn": "总胆红素(最大值)",
+        "display_name": "Total Bilirubin (Max)"
+    },
+    "inr_min": {
+        "standard_name": "inr_min",
+        "mimic_source_col": "inr_min",
+        "eicu_source_col": "INR",
+        "unit": null,
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.5,
+            "logical_max": 15.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "INR (Min)",
+        "display_name_cn": "国际标准化比值(最小值)",
+        "display_name": "INR (Min)"
+    },
+    "inr_max": {
+        "standard_name": "inr_max",
+        "mimic_source_col": "inr_max",
+        "eicu_source_col": "INR",
+        "unit": null,
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.5,
+            "logical_max": 15.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "INR (Max)",
+        "display_name_cn": "国际标准化比值(最大值)",
+        "display_name": "INR (Max)"
+    },
+    "pt_min": {
+        "standard_name": "pt_min",
+        "mimic_source_col": "pt_min",
+        "eicu_source_col": "PT",
+        "unit": "s",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 5.0,
+            "logical_max": 150.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Prothrombin Time (Min)",
+        "display_name_cn": "凝血酶原时间(最小值)",
+        "display_name": "Prothrombin Time (Min)"
+    },
+    "pt_max": {
+        "standard_name": "pt_max",
+        "mimic_source_col": "pt_max",
+        "eicu_source_col": "PT",
+        "unit": "s",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 5.0,
+            "logical_max": 150.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Prothrombin Time (Max)",
+        "display_name_cn": "凝血酶原时间(最大值)",
+        "display_name": "Prothrombin Time (Max)"
+    },
+    "ptt_min": {
+        "standard_name": "ptt_min",
+        "mimic_source_col": "ptt_min",
+        "eicu_source_col": "PTT",
+        "unit": "s",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 10.0,
+            "logical_max": 150.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Partial Thromboplastin Time (Min)",
+        "display_name_cn": "部分凝血活酶时间(最小值)",
+        "display_name": "Partial Thromboplastin Time (Min)"
+    },
+    "ptt_max": {
+        "standard_name": "ptt_max",
+        "mimic_source_col": "ptt_max",
+        "eicu_source_col": "PTT",
+        "unit": "s",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 10.0,
+            "logical_max": 150.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Partial Thromboplastin Time (Max)",
+        "display_name_cn": "部分凝血活酶时间(最大值)",
+        "display_name": "Partial Thromboplastin Time (Max)"
+    },
+    "lab_amylase_min": {
+        "standard_name": "amylase_min",
+        "mimic_source_col": "lab_amylase_min",
+        "eicu_source_col": "amylase",
+        "unit": "IU/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 15000
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Amylase (Min)",
+        "display_name_cn": "淀粉酶(最小值)",
+        "display_name": "Amylase (Min)"
+    },
+    "lab_amylase_max": {
+        "standard_name": "amylase_max",
+        "mimic_source_col": "lab_amylase_max",
+        "eicu_source_col": "amylase",
+        "unit": "IU/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 15000
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Amylase (Max)",
+        "display_name_cn": "淀粉酶(最大值)",
+        "display_name": "Amylase (Max)"
+    },
+    "alt_min": {
+        "standard_name": "alt_min",
+        "mimic_source_col": "alt_min",
+        "eicu_source_col": "ALT (SGPT)",
+        "unit": "U/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 10000
+        },
+        "conversion_factor": 1.0,
+        "apply_expm1": true,
+        "needs_log_transform": true,
+        "display_name_en": "ALT (Min)",
+        "display_name_cn": "丙氨酸氨基转移酶(最小值)",
+        "display_name": "ALT (Min)"
+    },
+    "alt_max": {
+        "standard_name": "alt_max",
+        "mimic_source_col": "alt_max",
+        "eicu_source_col": "ALT (SGPT)",
+        "unit": "U/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 10000
+        },
+        "conversion_factor": 1.0,
+        "apply_expm1": true,
+        "needs_log_transform": true,
+        "display_name_en": "ALT (Max)",
+        "display_name_cn": "丙氨酸氨基转移酶(最大值)",
+        "display_name": "ALT (Max)"
+    },
+    "ast_min": {
+        "standard_name": "ast_min",
+        "mimic_source_col": "ast_min",
+        "eicu_source_col": "AST (SGOT)",
+        "unit": "U/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 10000
+        },
+        "conversion_factor": 1.0,
+        "apply_expm1": true,
+        "needs_log_transform": true,
+        "display_name_en": "AST (Min)",
+        "display_name_cn": "天门冬氨酸氨基转移酶(最小值)",
+        "display_name": "AST (Min)"
+    },
+    "ast_max": {
+        "standard_name": "ast_max",
+        "mimic_source_col": "ast_max",
+        "eicu_source_col": "AST (SGOT)",
+        "unit": "U/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 10000
+        },
+        "conversion_factor": 1.0,
+        "apply_expm1": true,
+        "needs_log_transform": true,
+        "display_name_en": "AST (Max)",
+        "display_name_cn": "天门冬氨酸氨基转移酶(最大值)",
+        "display_name": "AST (Max)"
+    },
+    "alp_min": {
+        "standard_name": "alp_min",
+        "mimic_source_col": "alp_min",
+        "eicu_source_col": "alkaline phosphatase",
+        "unit": "U/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 4000
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "ALP (Min)",
+        "display_name_cn": "碱性磷酸酶(最小值)",
+        "display_name": "ALP (Min)"
+    },
+    "alp_max": {
+        "standard_name": "alp_max",
+        "mimic_source_col": "alp_max",
+        "eicu_source_col": "alkaline phosphatase",
+        "unit": "U/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 4000
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "ALP (Max)",
+        "display_name_cn": "碱性磷酸酶(最大值)",
+        "display_name": "ALP (Max)"
+    },
+    "crp_max": {
+        "standard_name": "crp_max",
+        "mimic_source_col": "crp_max",
+        "eicu_source_col": "CRP",
+        "unit": "mg/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 500
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "CRP (Max)",
+        "display_name_cn": "C反应蛋白(最大值)",
+        "display_name": "CRP (Max)"
+    },
+    "phosphate_min": {
+        "standard_name": "phosphate_min",
+        "mimic_source_col": "phosphate_min",
+        "eicu_source_col": "phosphate",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.5,
+            "logical_max": 20.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Phosphate (Min)",
+        "display_name_cn": "血磷(最小值)",
+        "display_name": "Phosphate (Min)"
+    },
+    "lipase_max": {
+        "standard_name": "lipase_max",
+        "mimic_source_col": "lipase_max",
+        "eicu_source_col": "lipase",
+        "unit": "U/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 15000
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Lipase (Max)",
+        "display_name_cn": "脂肪酶(最大值)",
+        "display_name": "Lipase (Max)"
+    },
+    "neutrophils_mean": {
+        "standard_name": "neutrophils_percent_mean",
+        "mimic_source_col": "neutrophils_mean",
+        "eicu_source_col": "-neutrophils",
+        "unit": "%",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.0,
+            "logical_max": 100.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Neutrophils (%) Mean",
+        "display_name_cn": "中性粒细胞百分比(均值)",
+        "display_name": "Neutrophils (%) Mean"
+    },
+    "lymphocytes_mean": {
+        "standard_name": "lymphocytes_percent_mean",
+        "mimic_source_col": "lymphocytes_mean",
+        "eicu_source_col": "-lymphocytes",
+        "unit": "%",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.0,
+            "logical_max": 100.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Lymphocytes (%) Mean",
+        "display_name_cn": "淋巴细胞百分比(均值)",
+        "display_name": "Lymphocytes (%) Mean"
+    },
+    "nlr": {
+        "standard_name": "neutrophil_lymphocyte_ratio",
+        "mimic_source_col": "nlr",
+        "eicu_source_col": "derived",
+        "unit": "ratio",
+        "category": "index",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.0,
+            "logical_max": 100.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "NLR",
+        "display_name_cn": "中性粒细胞/淋巴细胞比值",
+        "display_name": "NLR"
+    },
+    "d_dimer_max": {
+        "standard_name": "d_dimer_max",
+        "mimic_source_col": "d_dimer_max",
+        "eicu_source_col": "D-dimer",
+        "unit": "ug/mL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.1,
+            "logical_max": 50.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "D-Dimer (Max)",
+        "display_name_cn": "D-二聚体(最大值)",
+        "display_name": "D-Dimer (Max)"
+    },
+    "fibrinogen_max": {
+        "standard_name": "fibrinogen_max",
+        "mimic_source_col": "fibrinogen_max",
+        "eicu_source_col": "fibrinogen",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 20,
+            "logical_max": 1000
+        },
+        "conversion_factor": 100.0,
+        "needs_log_transform": true,
+        "display_name_en": "Fibrinogen (Max)",
+        "display_name_cn": "纤维蛋白原(最大值)",
+        "display_name": "Fibrinogen (Max)"
+    },
+    "ldh_max": {
+        "standard_name": "ldh_max",
+        "mimic_source_col": "ldh_max",
+        "eicu_source_col": "LDH",
+        "unit": "IU/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 50,
+            "logical_max": 20000
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "LDH (Max)",
+        "display_name_cn": "乳酸脱氢酶(最大值)",
+        "display_name": "LDH (Max)"
+    },
+    "glucose_lab_min": {
+        "standard_name": "glucose_lab_min",
+        "mimic_source_col": "glucose_lab_min",
+        "eicu_source_col": "glucose",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 10,
+            "logical_max": 1500
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Lab Glucose (Min)",
+        "display_name_cn": "实验室血糖(最小值)",
+        "display_name": "Lab Glucose (Min)"
+    },
+    "glucose_lab_max": {
+        "standard_name": "glucose_lab_max",
+        "mimic_source_col": "glucose_lab_max",
+        "eicu_source_col": "glucose",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 10,
+            "logical_max": 1500
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Lab Glucose (Max)",
+        "display_name_cn": "实验室血糖(最大值)",
+        "display_name": "Lab Glucose (Max)"
+    },
+    "glucose_slope": {
+        "standard_name": "glucose_slope",
+        "mimic_source_col": "glucose_slope",
+        "eicu_source_col": "derived",
+        "unit": "mg/dL per hour",
+        "category": "trend",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": -100,
+            "logical_max": 100
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Glucose Slope",
+        "display_name_cn": "血糖变化斜率",
+        "display_name": "Glucose Slope"
+    },
+    "rdw_max": {
+        "standard_name": "rdw_max",
+        "mimic_source_col": "rdw_max",
+        "eicu_source_col": "RDW",
+        "unit": "%",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 5.0,
+            "logical_max": 80.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "RDW (Max)",
+        "display_name_cn": "红细胞分布宽度(最大值)",
+        "display_name": "RDW (Max)"
+    },
+    "triglycerides_max": {
+        "standard_name": "triglycerides_max",
+        "mimic_source_col": "triglycerides_max",
+        "eicu_source_col": "triglycerides",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 10,
+            "logical_max": 5000
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Triglycerides (Max)",
+        "display_name_cn": "甘油三酯(最大值)",
+        "display_name": "Triglycerides (Max)"
+    },
+    "total_cholesterol_min": {
+        "standard_name": "total_cholesterol_min",
+        "mimic_source_col": "total_cholesterol_min",
+        "eicu_source_col": "total cholesterol",
+        "unit": "mg/dL",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 20,
+            "logical_max": 1000
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Total Cholesterol (Min)",
+        "display_name_cn": "总胆固醇(最小值)",
+        "display_name": "Total Cholesterol (Min)"
+    },
+    "lactate_min": {
+        "standard_name": "lactate_min",
+        "mimic_source_col": "lactate_min",
+        "eicu_source_col": "lactate",
+        "unit": "mmol/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.1,
+            "logical_max": 35.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Lactate (Min)",
+        "display_name_cn": "乳酸(最小值)",
+        "display_name": "Lactate (Min)"
+    },
+    "lactate_max": {
+        "standard_name": "lactate_max",
+        "mimic_source_col": "lactate_max",
+        "eicu_source_col": "lactate",
+        "unit": "mmol/L",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0.1,
+            "logical_max": 35.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": true,
+        "display_name_en": "Lactate (Max)",
+        "display_name_cn": "乳酸(最大值)",
+        "display_name": "Lactate (Max)"
+    },
+    "lactate_slope": {
+        "standard_name": "lactate_slope",
+        "mimic_source_col": "lactate_slope",
+        "eicu_source_col": "derived",
+        "unit": "mmol/L per hour",
+        "category": "trend",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": -10.0,
+            "logical_max": 10.0
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Lactate Slope",
+        "display_name_cn": "乳酸变化斜率",
+        "display_name": "Lactate Slope"
+    },
+    "spo2_min": {
+        "standard_name": "spo2_min",
+        "mimic_source_col": "spo2_min",
+        "eicu_source_col": "sao2",
+        "unit": "%",
+        "category": "vital_sign",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 40,
+            "logical_max": 100
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "SpO₂ (Min)",
+        "display_name_cn": "血氧饱和度(最小值)",
+        "display_name": "SpO₂ (Min)"
+    },
+    "spo2_max": {
+        "standard_name": "spo2_max",
+        "mimic_source_col": "spo2_max",
+        "eicu_source_col": "sao2",
+        "unit": "%",
+        "category": "vital_sign",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 40,
+            "logical_max": 100
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "SpO₂ (Max)",
+        "display_name_cn": "血氧饱和度(最大值)",
+        "display_name": "SpO₂ (Max)"
+    },
+    "spo2_slope": {
+        "standard_name": "spo2_slope",
+        "mimic_source_col": "spo2_slope",
+        "eicu_source_col": "derived",
+        "unit": "% per hour",
+        "category": "trend",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": -20,
+            "logical_max": 20
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "SpO₂ Slope",
+        "display_name_cn": "血氧饱和度斜率",
+        "display_name": "SpO₂ Slope"
+    },
+    "ph_min": {
+        "standard_name": "ph_min",
+        "mimic_source_col": "ph_min",
+        "eicu_source_col": "pH",
+        "unit": null,
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 6.5,
+            "logical_max": 8.2
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "pH (Min)",
+        "display_name_cn": "pH值(最小值)",
+        "display_name": "pH (Min)"
+    },
+    "ph_max": {
+        "standard_name": "ph_max",
+        "mimic_source_col": "ph_max",
+        "eicu_source_col": "pH",
+        "unit": null,
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 6.5,
+            "logical_max": 8.2
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "pH (Max)",
+        "display_name_cn": "pH值(最大值)",
+        "display_name": "pH (Max)"
+    },
+    "pao2fio2ratio_min": {
+        "standard_name": "pao2fio2ratio_min",
+        "mimic_source_col": "pao2fio2ratio_min",
+        "eicu_source_col": "derived",
+        "unit": "mmHg",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 10,
+            "logical_max": 800
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "PaO₂/FiO₂ Ratio (Min)",
+        "display_name_cn": "氧合指数(最小值)",
+        "display_name": "PaO₂/FiO₂ Ratio (Min)"
+    },
+    "pao2fio2ratio_max": {
+        "standard_name": "pao2fio2ratio_max",
+        "mimic_source_col": "pao2fio2ratio_max",
+        "eicu_source_col": "derived",
+        "unit": "mmHg",
+        "category": "lab_test",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 10,
+            "logical_max": 800
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "PaO₂/FiO₂ Ratio (Max)",
+        "display_name_cn": "氧合指数(最大值)",
+        "display_name": "PaO₂/FiO₂ Ratio (Max)"
+    },
+    "lar": {
+        "standard_name": "lactate_albumin_ratio",
+        "mimic_source_col": "lar",
+        "eicu_source_col": "derived",
+        "unit": "ratio",
+        "category": "index",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 50
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Lactate-Albumin Ratio",
+        "display_name_cn": "乳酸/白蛋白比值",
+        "display_name": "Lactate-Albumin Ratio"
+    },
+    "tbar": {
+        "standard_name": "triglyceride_bilirubin_albumin_ratio",
+        "mimic_source_col": "tbar",
+        "eicu_source_col": "derived",
+        "unit": "ratio",
+        "category": "index",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 500
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "TBAR Score",
+        "display_name_cn": "TBAR评分",
+        "display_name": "TBAR Score"
+    },
+    "mechanical_vent_flag": {
+        "standard_name": "mechanical_vent_flag",
+        "mimic_source_col": "mechanical_vent_flag",
+        "eicu_source_col": "respiratoryCare / ventilation",
+        "unit": null,
+        "category": "intervention",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 1
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Mechanical Ventilation",
+        "display_name_cn": "机械通气",
+        "display_name": "Mechanical Ventilation"
+    },
+    "vaso_flag": {
+        "standard_name": "vaso_flag",
+        "mimic_source_col": "vaso_flag",
+        "eicu_source_col": "infusionDrug / vasopressor",
+        "unit": null,
+        "category": "intervention",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 1
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Vasopressor Use",
+        "display_name_cn": "血管活性药物使用",
+        "display_name": "Vasopressor Use"
+    },
+    "heart_failure": {
+        "standard_name": "heart_failure",
+        "mimic_source_col": "heart_failure",
+        "eicu_source_col": "diagnosis / pasthistory",
+        "unit": null,
+        "category": "comorbidity",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 1
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Heart Failure",
+        "display_name_cn": "心力衰竭",
+        "display_name": "Heart Failure"
+    },
+    "chronic_kidney_disease": {
+        "standard_name": "chronic_kidney_disease",
+        "mimic_source_col": "chronic_kidney_disease",
+        "eicu_source_col": "diagnosis / pasthistory",
+        "unit": null,
+        "category": "comorbidity",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 1
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Chronic Kidney Disease",
+        "display_name_cn": "慢性肾病",
+        "display_name": "Chronic Kidney Disease"
+    },
+    "malignant_tumor": {
+        "standard_name": "malignant_tumor",
+        "mimic_source_col": "malignant_tumor",
+        "eicu_source_col": "diagnosis / pasthistory",
+        "unit": null,
+        "category": "comorbidity",
+        "is_model_input": true,
+        "ref_range": {
+            "logical_min": 0,
+            "logical_max": 1
+        },
+        "conversion_factor": 1.0,
+        "needs_log_transform": false,
+        "display_name_en": "Malignant Tumor",
+        "display_name_cn": "恶性肿瘤",
+        "display_name": "Malignant Tumor"
+    }
+}

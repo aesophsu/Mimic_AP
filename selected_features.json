@@ -1,0 +1,97 @@
+{
+    "pof": {
+        "n_features": 10,
+        "features": [
+            "wbc_max",
+            "albumin_min",
+            "albumin_max",
+            "bun_min",
+            "creatinine_max",
+            "alp_min",
+            "lactate_max",
+            "spo2_max",
+            "ph_min",
+            "pao2fio2ratio_min"
+        ],
+        "weights": {
+            "wbc_max": 0.0062,
+            "albumin_min": -0.1731,
+            "albumin_max": -0.029,
+            "bun_min": 0.0032,
+            "creatinine_max": 0.5322,
+            "alp_min": -0.0305,
+            "lactate_max": 0.0303,
+            "spo2_max": 0.0499,
+            "ph_min": -0.3195,
+            "pao2fio2ratio_min": -0.4776
+        },
+        "best_C": 0.022051307399030457,
+        "best_lambda": 45.34878508128582
+    },
+    "mortality": {
+        "n_features": 12,
+        "features": [
+            "admission_age",
+            "wbc_min",
+            "hemoglobin_min",
+            "albumin_max",
+            "bun_min",
+            "bun_max",
+            "ptt_min",
+            "lactate_max",
+            "spo2_min",
+            "spo2_slope",
+            "pao2fio2ratio_min",
+            "tbar"
+        ],
+        "weights": {
+            "admission_age": 0.154,
+            "wbc_min": 0.0874,
+            "hemoglobin_min": -0.003,
+            "albumin_max": -0.0599,
+            "bun_min": 0.1051,
+            "bun_max": 0.1787,
+            "ptt_min": 0.2217,
+            "lactate_max": 0.2891,
+            "spo2_min": -0.042,
+            "spo2_slope": 0.0035,
+            "pao2fio2ratio_min": -0.0206,
+            "tbar": 0.1551
+        },
+        "best_C": 0.026560877829466867,
+        "best_lambda": 37.64935806792467
+    },
+    "composite": {
+        "n_features": 12,
+        "features": [
+            "tbar",
+            "hematocrit_max",
+            "alp_min",
+            "aniongap_min",
+            "wbc_max",
+            "ptt_min",
+            "lactate_max",
+            "bun_min",
+            "albumin_min",
+            "ph_min",
+            "creatinine_max",
+            "pao2fio2ratio_min"
+        ],
+        "weights": {
+            "tbar": 0.0522,
+            "hematocrit_max": -0.0534,
+            "alp_min": -0.0669,
+            "aniongap_min": 0.0747,
+            "wbc_max": 0.1195,
+            "ptt_min": 0.1264,
+            "lactate_max": 0.1899,
+            "bun_min": 0.216,
+            "albumin_min": -0.261,
+            "ph_min": -0.3341,
+            "creatinine_max": 0.4238,
+            "pao2fio2ratio_min": -0.5328
+        },
+        "best_C": 0.03853528593710531,
+        "best_lambda": 25.950242113997348
+    }
+}
