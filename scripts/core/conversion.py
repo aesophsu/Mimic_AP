@@ -9,11 +9,7 @@ Design principles
 - Explicit, named conversions referenced by FeatureSpec.convert
 - Safe for scalars, NumPy arrays, and Pandas Series
 - Vectorized, NaN-safe, and reproducible
-
-Intended for:
-- Feature engineering pipelines
-- Table 1 / baseline characteristic generation
-- External validation (unit harmonization across databases)
+- Optional logging for SI unit checks
 """
 
 from typing import Callable, Dict, Union, Optional
@@ -61,12 +57,10 @@ def register_conversion(name: str) -> Callable[[ConversionFunc], ConversionFunc]
     return decorator
 
 # =============================================================================
-# Utility: Safe multiplication (vectorized & tolerant)
+# Utility: Safe multiplication
 # =============================================================================
 def _safe_mul(x: Numeric, factor: float) -> Numeric:
-    """
-    Multiply by factor, safely handling non-numeric input.
-    """
+    """Multiply by factor safely, non-numeric passthrough."""
     try:
         return x * factor
     except Exception:
@@ -77,27 +71,22 @@ def _safe_mul(x: Numeric, factor: float) -> Numeric:
 # =============================================================================
 @register_conversion("bun_mgdl_to_mmol")
 def bun_mgdl_to_mmol(x: Numeric) -> Numeric:
-    """Blood urea nitrogen: mg/dL → mmol/L (Factor: 0.357)"""
     return _safe_mul(x, 0.357)
 
 @register_conversion("creatinine_mgdl_to_umol")
 def creatinine_mgdl_to_umol(x: Numeric) -> Numeric:
-    """Serum creatinine: mg/dL → µmol/L (Factor: 88.4)"""
     return _safe_mul(x, 88.4)
 
 @register_conversion("glucose_mgdl_to_mmol")
 def glucose_mgdl_to_mmol(x: Numeric) -> Numeric:
-    """Glucose: mg/dL → mmol/L (Factor: 0.0555)"""
     return _safe_mul(x, 0.0555)
 
 @register_conversion("calcium_mgdl_to_mmol")
 def calcium_mgdl_to_mmol(x: Numeric) -> Numeric:
-    """Total calcium: mg/dL → mmol/L (Factor: 0.2495)"""
     return _safe_mul(x, 0.2495)
 
 @register_conversion("bilirubin_mgdl_to_umol")
 def bilirubin_mgdl_to_umol(x: Numeric) -> Numeric:
-    """Total bilirubin: mg/dL → µmol/L (Factor: 17.1)"""
     return _safe_mul(x, 17.1)
 
 # =============================================================================
@@ -105,7 +94,6 @@ def bilirubin_mgdl_to_umol(x: Numeric) -> Numeric:
 # =============================================================================
 @register_conversion("fahrenheit_to_celsius")
 def fahrenheit_to_celsius(x: Numeric) -> Numeric:
-    """Body temperature: Fahrenheit → Celsius"""
     try:
         return (x - 32.0) * 5.0 / 9.0
     except Exception:
@@ -113,15 +101,10 @@ def fahrenheit_to_celsius(x: Numeric) -> Numeric:
 
 @register_conversion("wbc_to_si")
 def wbc_to_si(x: Numeric) -> Numeric:
-    """
-    WBC count: K/µL → 10^9/L
-    Numerically identical, semantic clarity only.
-    """
     return x
 
 @register_conversion("identity")
 def identity(x: Numeric) -> Numeric:
-    """Explicit no-op conversion."""
     return x
 
 # =============================================================================
@@ -130,13 +113,14 @@ def identity(x: Numeric) -> Numeric:
 CONVERSION_REGISTRY: Dict[str, ConversionFunc] = _CONVERSION_REGISTRY
 
 # =============================================================================
-# 4. Helper API for pipeline integration
+# 4. Helper API with optional logging
 # =============================================================================
 def apply_feature_conversion(
     data: Numeric,
     convert_name: Optional[str],
     *,
     strict: bool = False,
+    log: bool = False,
 ) -> Numeric:
     """
     Apply unit conversion based on FeatureSpec.convert.
@@ -144,14 +128,16 @@ def apply_feature_conversion(
     Args:
         data: Scalar, NumPy array, or Pandas Series
         convert_name: Key from FeatureSpec.convert
-        strict: 
-            True  → raise KeyError if conversion not found
-            False → warn and return raw data
+        strict: True → raise KeyError if conversion not found
+                False → warn and return raw data
+        log: If True, print SI check info
 
     Returns:
         Converted data (same type as input)
     """
     if convert_name is None or convert_name == "identity":
+        if log:
+            print("[Conversion] identity → no operation performed.")
         return data
 
     if convert_name not in CONVERSION_REGISTRY:
@@ -161,4 +147,17 @@ def apply_feature_conversion(
         warnings.warn(msg + " Returning raw data.")
         return data
 
-    return CONVERSION_REGISTRY[convert_name](data)
+    converted = CONVERSION_REGISTRY[convert_name](data)
+
+    if log:
+        sample_val = None
+        try:
+            if isinstance(converted, (pd.Series, np.ndarray)):
+                sample_val = converted.ravel()[0]
+            else:
+                sample_val = converted
+        except Exception:
+            sample_val = "N/A"
+        print(f"[Conversion] '{convert_name}' applied. Sample value after conversion: {sample_val}")
+
+    return converted
