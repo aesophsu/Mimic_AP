@@ -1197,14 +1197,13 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         latex=r"\frac{\Delta Glc}{\Delta t}",
         unit="mg/dL/hr",
         unit_si="mmol/L/hr",
-        convert="glucose_mgdl_to_mmol"  # applied element-wise; slope unit preserved
+        convert="glucose_mgdl_to_mmol",  # applied element-wise; slope unit preserved
         zscore=True,
         clinical_domain="metabolic",
         table_role="feature",
         time_aggregation="slope",
         time_anchor="icu_admit",
         time_window_hr=24.0,
-        # 限制每小时变化不超过 200 mg/dL (约 11 mmol/L)
         clip_bounds=(-200.0, 200.0),   
         ref_range=(-5.0, 5.0),         # 理想状态应波动极小
         impute_method="constant_zero", # 变化率为缺失通常意味着数值平稳（slope=0）
