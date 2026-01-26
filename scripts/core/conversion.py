@@ -161,3 +161,100 @@ def apply_feature_conversion(
         print(f"[Conversion] '{convert_name}' applied. Sample value after conversion: {sample_val}")
 
     return converted
+
+# =============================================================================
+# 5. Unit plausibility check (non-destructive, audit only)
+# =============================================================================
+def unit_plausibility_check(
+    data: Numeric,
+    *,
+    feature_name: Optional[str] = None,
+    unit: Optional[str] = None,
+    ref_range: Optional[tuple] = None,
+    min_fraction_in_range: float = 0.8,
+    strict: bool = False,
+    log: bool = True,
+) -> None:
+    """
+    Check whether observed values are plausible for the declared unit.
+
+    This function does NOT modify data. It only inspects value ranges
+    and emits warnings or errors when unit inconsistency is suspected.
+
+    Args:
+        data:
+            Scalar, NumPy array, or Pandas Series.
+        feature_name:
+            Optional feature name for logging.
+        unit:
+            Declared unit (for log readability).
+        ref_range:
+            Tuple (low, high) of physiologically plausible range.
+        min_fraction_in_range:
+            Minimum fraction of non-missing values expected to fall
+            within ref_range.
+        strict:
+            - True  → raise ValueError on plausibility failure
+            - False → emit warning only
+        log:
+            If True, print audit messages.
+
+    Returns:
+        None
+    """
+    if ref_range is None:
+        return  # nothing to check
+
+    # ---------------------
+    # Convert input to numeric array
+    # ---------------------
+    try:
+        if isinstance(data, pd.Series):
+            values = data.dropna().values
+        elif isinstance(data, np.ndarray):
+            values = data[~np.isnan(data)]
+        else:  # scalar
+            values = np.array([data], dtype=float)
+    except Exception:
+        # Non-numeric data, silently skip
+        return
+
+    if values.size == 0:
+        return  # nothing to check
+
+    low, high = ref_range
+
+    # ---------------------
+    # Fraction in plausible range
+    # ---------------------
+    in_range = (values >= low) & (values <= high)
+    frac_in_range = in_range.mean()
+
+    # ---------------------
+    # Robust summary stats
+    # ---------------------
+    q05 = np.nanpercentile(values, 5)
+    q50 = np.nanpercentile(values, 50)
+    q95 = np.nanpercentile(values, 95)
+
+    # ---------------------
+    # Decide plausibility
+    # ---------------------
+    if frac_in_range < min_fraction_in_range:
+        fname = feature_name or "UnknownFeature"
+        ustr = f" ({unit})" if unit else ""
+        msg = (
+            f"[UnitCheck][WARN] {fname}{ustr}: "
+            f"Only {frac_in_range:.1%} of values within "
+            f"expected range [{low}, {high}]. "
+            f"Observed P5/P50/P95 = "
+            f"{q05:.3g}/{q50:.3g}/{q95:.3g}. "
+            f"Possible unit mismatch."
+        )
+
+        if strict:
+            raise ValueError(msg)
+
+        if log:
+            warnings.warn(msg)
+
