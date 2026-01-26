@@ -78,6 +78,7 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         table_role="feature",
         time_anchor="hospital_admit",
         time_aggregation=None,         # 静态基线，无聚合过程
+        clip_bounds=(18, 100),         # 剔除极端高龄或错误的录入
     ),
 
     "weight_admit": FeatureSpec(
@@ -91,6 +92,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         table_role="feature",
         time_anchor="icu_admit",
         time_aggregation=None,
+        clip_bounds=(30, 250),         # 30kg - 250kg 是成人ICU合理范围
+        ref_range=(50, 90),            # 参考范围仅供分布参考
     ),
 
     "los": FeatureSpec(
@@ -102,7 +105,9 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         table_role="outcome",          # 结局变量
         allow_in_model=False,          # 结局指标永不作为特征入模
         allow_in_selection=False,
-        time_aggregation="sum",
+        time_aggregation: None,
+        time_anchor: None,
+        time_window_hr: None,
         zscore=False,
     ),
     
@@ -243,6 +248,7 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation=None,         # 评分本身即为时间窗口内的聚合值
         time_anchor="icu_admit",
         time_window_hr=24.0,           # 通常基于入库前24h数据计算
+        clip_bounds=(0, 24),           # SOFA 理论最大值 24
     ),
 
     "apsiii": FeatureSpec(
@@ -257,6 +263,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation=None,
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(0, 299),
+        ref_range=(0, 40),
     ),
 
     "sapsii": FeatureSpec(
@@ -271,6 +279,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation=None,
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(0, 163),
+        ref_range=(0, 29),
     ),
 
     "oasis": FeatureSpec(
@@ -285,6 +295,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation=None,
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(0, 70),
+        ref_range=(0, 20),
     ),
 
     "lods": FeatureSpec(
@@ -299,6 +311,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation=None,
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(0, 22),
+        ref_range=(0, 3),
     ),
     
     # =====================
@@ -317,6 +331,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(0.1, 100),        # 100*10^9/L 以上极罕见且可能是白血病/错误
+        ref_range=(4.0, 10.0),
     ),
 
     "wbc_max": FeatureSpec(
@@ -332,9 +348,11 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(0.1, 100),        # 100*10^9/L 以上极罕见且可能是白血病/错误
+        ref_range=(4.0, 10.0),
     ),
 
-    "hematocrit_min": FeatureSpec(
+"hematocrit_min": FeatureSpec(
         name="hematocrit_min",
         display_en="Hct (min)",
         display_cn="红细胞压积(最小)",
@@ -346,6 +364,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(10.0, 70.0),       # 极度贫血至极度红细胞增多
+        ref_range=(36.0, 50.0),
     ),
 
     "hematocrit_max": FeatureSpec(
@@ -360,6 +380,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(10.0, 70.0),
+        ref_range=(36.0, 50.0),
     ),
 
     "hemoglobin_min": FeatureSpec(
@@ -368,26 +390,34 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         display_cn="血红蛋白(最小)",
         latex=r"Hb_{min}",
         unit="g/dL",
+        unit_si="g/L",
+        convert="gdl_to_gl_multiply_10", # 单位换算：1 g/dL = 10 g/L
         zscore=True,
         clinical_domain="lab",
         table_role="feature",
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(3.0, 25.0),        # 低于3.0需紧急输血，高于25.0极罕见
+        ref_range=(12.0, 17.5),
     ),
-
+    
     "hemoglobin_max": FeatureSpec(
         name="hemoglobin_max",
         display_en="Hb (max)",
         display_cn="血红蛋白(最大)",
         latex=r"Hb_{max}",
         unit="g/dL",
+        unit_si="g/L",
+        convert="gdl_to_gl_multiply_10",
         zscore=True,
         clinical_domain="lab",
         table_role="feature",
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(3.0, 25.0),
+        ref_range=(12.0, 17.5),
     ),
 
     "platelets_min": FeatureSpec(
@@ -396,12 +426,15 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         display_cn="血小板计数(最小)",
         latex=r"PLT_{min}",
         unit="10^9/L",
+        log_transform=True,             # 建议开启：PLT在危重症下波动跨度大且呈偏态
         zscore=True,
         clinical_domain="lab",
         table_role="feature",
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(5, 2000),          # 排除录入错误的0
+        ref_range=(150, 450),
     ),
 
     "platelets_max": FeatureSpec(
@@ -410,12 +443,15 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         display_cn="血小板计数(最大)",
         latex=r"PLT_{max}",
         unit="10^9/L",
+        log_transform=True,
         zscore=True,
         clinical_domain="lab",
         table_role="feature",
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(5, 2000),
+        ref_range=(150, 450),
     ),
 
     "rdw_max": FeatureSpec(
@@ -430,6 +466,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(10.0, 35.0),
+        ref_range=(11.0, 15.0),
     ),
     
     # =====================
@@ -443,13 +481,16 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         unit="mg/dL",
         unit_si="mmol/L",
         convert="bun_mgdl_to_mmol",
-        log_transform=True,            # BUN 随肾功衰竭常呈非线性增长
+        log_transform=True,            
         zscore=True,
         clinical_domain="renal",
         table_role="feature",
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        # 临床上限通常在150-200左右，排除200以上的极极端异常
+        clip_bounds=(1.0, 200.0),      
+        ref_range=(7.0, 20.0),
     ),
 
     "bun_max": FeatureSpec(
@@ -467,6 +508,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(1.0, 200.0),
+        ref_range=(7.0, 20.0),
     ),
 
     "creatinine_min": FeatureSpec(
@@ -484,6 +527,9 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        # 成人肌酐极少超过30 mg/dL，即使是透析患者
+        clip_bounds=(0.1, 30.0),       
+        ref_range=(0.6, 1.3),
     ),
 
     "creatinine_max": FeatureSpec(
@@ -501,6 +547,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(0.1, 30.0),
+        ref_range=(0.6, 1.3),
     ),
 
     "phosphate_min": FeatureSpec(
@@ -510,13 +558,16 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         latex=r"P_{min}",
         unit="mg/dL",
         unit_si="mmol/L",
-        log_transform=False,
+        convert="phosphate_mgdl_to_mmol",
+        log_transform=False,           # 磷的分布相对集中
         zscore=True,
         clinical_domain="renal",
         table_role="feature",
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(0.5, 15.0),       # 极高磷血症罕见超过15
+        ref_range=(2.5, 4.5),
     ),
     
     # =====================
@@ -535,6 +586,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(100.0, 180.0),      # 极度低钠至重度高钠
+        ref_range=(135.0, 145.0),
     ),
 
     "sodium_max": FeatureSpec(
@@ -550,6 +603,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(100.0, 180.0),
+        ref_range=(135.0, 145.0),
     ),
 
     "potassium_min": FeatureSpec(
@@ -565,6 +620,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(1.5, 10.0),         # 极低钾/极高钾
+        ref_range=(3.5, 5.0),
     ),
 
     "potassium_max": FeatureSpec(
@@ -580,6 +637,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(1.5, 10.0),
+        ref_range=(3.5, 5.0),
     ),
 
     "chloride_min": FeatureSpec(
@@ -595,6 +654,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(60.0, 160.0),
+        ref_range=(98.0, 107.0),
     ),
 
     "chloride_max": FeatureSpec(
@@ -610,6 +671,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(60.0, 160.0),
+        ref_range=(98.0, 107.0),
     ),
 
     "bicarbonate_min": FeatureSpec(
@@ -625,6 +688,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(2.0, 60.0),         # 低于2表示极重度酸中毒
+        ref_range=(22.0, 28.0),
     ),
 
     "bicarbonate_max": FeatureSpec(
@@ -640,6 +705,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(2.0, 60.0),
+        ref_range=(22.0, 28.0),
     ),
 
     "aniongap_min": FeatureSpec(
@@ -654,6 +721,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(1.0, 60.0),
+        ref_range=(8.0, 16.0),
     ),
 
     "aniongap_max": FeatureSpec(
@@ -668,6 +737,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(1.0, 60.0),
+        ref_range=(8.0, 16.0),
     ),
 
     "ph_min": FeatureSpec(
@@ -676,11 +747,15 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         display_cn="pH值(最小)",
         latex=r"pH_{min}",
         zscore=True,
+        log_transform=False,           # pH 本身就是对数尺度，无需再次 log
         clinical_domain="acid-base",
         table_role="feature",
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        # 理论生理极限通常在 6.5 - 8.0 之间
+        clip_bounds=(6.5, 8.0),        
+        ref_range=(7.35, 7.45),
     ),
 
     "ph_max": FeatureSpec(
@@ -689,14 +764,17 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         display_cn="pH值(最大)",
         latex=r"pH_{max}",
         zscore=True,
+        log_transform=False,
         clinical_domain="acid-base",
         table_role="feature",
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(6.5, 8.0),
+        ref_range=(7.35, 7.45),
     ),
     
-    # =====================
+# =====================
     # Labs: Liver Function
     # =====================
     "albumin_min": FeatureSpec(
@@ -706,12 +784,15 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         latex=r"Alb_{min}",
         unit="g/dL",
         unit_si="g/L",
+        convert="gdl_to_gl_multiply_10", 
         zscore=True,
         clinical_domain="liver",
         table_role="feature",
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(1.0, 6.0),           # 低于1.0极罕见，高于6.0多为输注后
+        ref_range=(3.5, 5.2),
     ),
 
     "albumin_max": FeatureSpec(
@@ -721,12 +802,15 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         latex=r"Alb_{max}",
         unit="g/dL",
         unit_si="g/L",
+        convert="gdl_to_gl_multiply_10",
         zscore=True,
         clinical_domain="liver",
         table_role="feature",
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(1.0, 6.0),
+        ref_range=(3.5, 5.2),
     ),
 
     "bilirubin_total_min": FeatureSpec(
@@ -736,6 +820,7 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         latex=r"TBil_{min}",
         unit="mg/dL",
         unit_si="µmol/L",
+        convert="bilirubin_mgdl_to_umol",  # 1 mg/dL = 17.1 umol/L
         log_transform=True,
         zscore=True,
         clinical_domain="liver",
@@ -743,6 +828,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(0.1, 70.0),          # 重度黄疸上限可达 50-70
+        ref_range=(0.3, 1.2),
     ),
 
     "bilirubin_total_max": FeatureSpec(
@@ -752,6 +839,7 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         latex=r"TBil_{max}",
         unit="mg/dL",
         unit_si="µmol/L",
+        convert="bilirubin_mgdl_to_umol",
         log_transform=True,
         zscore=True,
         clinical_domain="liver",
@@ -759,6 +847,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(0.1, 70.0),
+        ref_range=(0.3, 1.2),
     ),
 
     "alt_max": FeatureSpec(
@@ -774,6 +864,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(1.0, 10000.0),       # 急性肝衰竭可破万
+        ref_range=(7.0, 55.0),
     ),
 
     "ast_max": FeatureSpec(
@@ -789,6 +881,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(1.0, 10000.0),
+        ref_range=(8.0, 48.0),
     ),
 
     "alp_max": FeatureSpec(
@@ -804,6 +898,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(10.0, 4000.0),
+        ref_range=(40.0, 130.0),
     ),
 
     "tbar": FeatureSpec(
@@ -811,13 +907,17 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         display_en="B/A Ratio",
         display_cn="胆红素/白蛋白比值",
         latex=r"\frac{TBil}{Alb}",
-        unit="mg/g",  # 常用单位
-        log_transform=True,
         zscore=True,
+        log_transform=True, 
         clinical_domain="liver",
         table_role="feature",
-        time_aggregation="mean", # 或者是根据聚合后的 TBil/Alb 计算
+        time_aggregation=None,
+        time_anchor=None,
+        unit=None,                        # 无量纲
+        clip_bounds=(0.01, 50.0),         # 经验性区间
+        ref_range=(0.05, 0.5),            # 估算值，随计算方法变化
     ),
+    
     # =====================
     # Labs: Coagulation
     # =====================
@@ -826,14 +926,16 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         display_en="INR (min)",
         display_cn="国际标准化比值(最小)",
         latex=r"INR_{min}",
-        unit=None,                     # INR 为比值，无单位
-        log_transform=True,            # 凝血功能障碍时常呈偏态分布
+        unit=None,                     
+        log_transform=True,            # 建议开启：严重凝血障碍时呈指数级增长
         zscore=True,
         clinical_domain="coagulation",
         table_role="feature",
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(0.5, 15.0),       # 排除极端错误值，INR > 10 已极度危险
+        ref_range=(0.8, 1.1),          # 未服用抗凝药的正常水平
     ),
 
     "inr_max": FeatureSpec(
@@ -849,6 +951,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(0.5, 15.0),
+        ref_range=(0.8, 1.1),
     ),
 
     "pt_min": FeatureSpec(
@@ -864,6 +968,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(5.0, 150.0),      # PT上限通常不超150s
+        ref_range=(11.0, 13.5),
     ),
 
     "pt_max": FeatureSpec(
@@ -879,6 +985,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(5.0, 150.0),
+        ref_range=(11.0, 13.5),
     ),
 
     "ptt_min": FeatureSpec(
@@ -894,6 +1002,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(10.0, 150.0),
+        ref_range=(25.0, 35.0),
     ),
 
     "ptt_max": FeatureSpec(
@@ -909,9 +1019,10 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(10.0, 150.0),
+        ref_range=(25.0, 35.0),
     ),
-    
-    # =====================
+# =====================
     # Labs: Perfusion & Inflammation
     # =====================
     "lactate_max": FeatureSpec(
@@ -920,13 +1031,20 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         display_cn="乳酸(最大)",
         latex=r"Lac_{max}",
         unit="mmol/L",
-        log_transform=True,            # 乳酸呈偏态分布，严重时指数级上升
+        log_transform=True,            
         zscore=True,
         clinical_domain="perfusion",
+        table_role="feature",
         time_aggregation="max",
+        time_anchor="icu_admit",
+        time_window_hr=24.0,
+        # 乳酸高于 20 通常提示极高死亡率或标本污染
+        clip_bounds=(0.3, 30.0),       
+        ref_range=(0.5, 2.0),
     ),
+
     # =====================
-    # Labs: Pancreatic
+    # Labs: Pancreas
     # =====================
     "lipase_max": FeatureSpec(
         name="lipase_max",
@@ -934,13 +1052,16 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         display_cn="脂肪酶(最大)",
         latex=r"Lip_{max}",
         unit="IU/L",
-        log_transform=True,            # 胰腺炎时数值通常呈数量级波动
+        log_transform=True,            
         zscore=True,
         clinical_domain="pancreas",
         table_role="feature",
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        # 严重急性胰腺炎时可高达数千
+        clip_bounds=(5.0, 10000.0),    
+        ref_range=(10.0, 160.0),
     ),
 
     # =====================
@@ -948,7 +1069,7 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
     # =====================
     "glucose_min": FeatureSpec(
         name="glucose_min",
-        display_en="Glc (min)",        # General glucose sources
+        display_en="Glc (min)",
         display_cn="血糖(最小)",
         latex=r"Glc_{min}",
         unit="mg/dL",
@@ -961,6 +1082,9 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        # 低于 20 为致死性低血糖，高于 1000 为极重度高血糖（如 HHS）
+        clip_bounds=(20.0, 1000.0),    
+        ref_range=(70.0, 100.0),
     ),
 
     "glucose_max": FeatureSpec(
@@ -978,14 +1102,16 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(20.0, 1000.0),
+        ref_range=(70.0, 100.0),
     ),
 
-    # =====================
+ # =====================
     # Labs: Glucose (Lab-only)
     # =====================
     "glucose_lab_min": FeatureSpec(
         name="glucose_lab_min",
-        display_en="Glc-Lab (min)",    # Confirmed lab-based venous glucose
+        display_en="Glc-Lab (min)",
         display_cn="血糖-实验室(最小)",
         latex=r"Glc_{lab.min}",
         unit="mg/dL",
@@ -998,6 +1124,9 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        # 对应 mmol/L 约 (1.1, 55.5)
+        clip_bounds=(20.0, 1000.0),    
+        ref_range=(70.0, 100.0),
     ),
 
     "glucose_lab_max": FeatureSpec(
@@ -1015,8 +1144,10 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(20.0, 1000.0),
+        ref_range=(70.0, 100.0),
     ),
-    
+
     # =====================
     # Vitals: Oxygenation
     # =====================
@@ -1033,6 +1164,9 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        # 低于 50% 读数通常被视为伪影或濒死
+        clip_bounds=(50.0, 100.0),     
+        ref_range=(94.0, 100.0),
     ),
 
     "spo2_max": FeatureSpec(
@@ -1048,8 +1182,9 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="max",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        clip_bounds=(50.0, 100.0),
+        ref_range=(94.0, 100.0),
     ),
-
     # =====================
     # Temporal Dynamics: Slopes
     # =====================
@@ -1060,12 +1195,16 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         latex=r"\frac{\Delta Glc}{\Delta t}",
         unit="mg/dL/hr",
         unit_si="mmol/L/hr",
+        convert="glucose_mgdl_to_mmol",
         zscore=True,
         clinical_domain="metabolic",
         table_role="feature",
         time_aggregation="slope",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        # 限制每小时变化不超过 200 mg/dL (约 11 mmol/L)
+        clip_bounds=(-200.0, 200.0),   
+        ref_range=(-5.0, 5.0),         # 理想状态应波动极小
     ),
 
     "spo2_slope": FeatureSpec(
@@ -1080,6 +1219,9 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="slope",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        # 限制每小时血氧升降不超过 20%
+        clip_bounds=(-20.0, 20.0),      
+        ref_range=(-1.0, 1.0),
     ),
 
     # =====================
@@ -1090,15 +1232,17 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         display_en="P/F Ratio (min)",
         display_cn="氧合指数(最小)",
         latex=r"PaO_2/FiO_{2min}",
-        unit="mmHg",
+        unit=None,                     # 虽然常用 mmHg，但严格意义上是比值
         zscore=True,
-        log_transform=False,
+        log_transform=False,           # 临床上更关注原始线性区间（100/200/300断点）
         clinical_domain="respiratory",
         table_role="feature",
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
         allow_in_selection=True,
+        clip_bounds=(20.0, 800.0),     
+        ref_range=(400.0, 500.0),      # 正常成人参考范围
     ),
     
     # =====================
@@ -1108,11 +1252,13 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         name="heart_failure",
         display_en="Heart Failure",
         display_cn="心力衰竭",
-        latex=r"I_{HF}",               # 使用指示函数符号
+        latex=r"I_{HF}",
         clinical_domain="comorbidity",
-        table_role="confounder",        # 设为混杂因素，用于固定校正
-        allow_in_selection=False,       # 不参与自动筛选，基于专家共识强制保留
-        impute_method="constant_zero",  # 缺失通常代表无该病史
+        table_role="confounder",
+        allow_in_selection=False,
+        impute_method="constant_zero",
+        clip_bounds=None,              # 二分类变量不使用截断
+        ref_range=(0, 0),              # 参考值为无该病
     ),
 
     "chronic_kidney_disease": FeatureSpec(
@@ -1124,6 +1270,8 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         table_role="confounder",
         allow_in_selection=False,
         impute_method="constant_zero",
+        clip_bounds=None,
+        ref_range=(0, 0),
     ),
 
     "malignant_tumor": FeatureSpec(
@@ -1135,5 +1283,7 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         table_role="confounder",
         allow_in_selection=False,
         impute_method="constant_zero",
+        clip_bounds=None,
+        ref_range=(0, 0),
     ),
 }
