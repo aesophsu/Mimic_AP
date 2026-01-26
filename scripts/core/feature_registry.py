@@ -59,12 +59,13 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         display_en="Gender",
         display_cn="性别",
         clinical_domain="demographics",
-        table_role="group",            # 分组变量
-        allow_in_model=True,           # 作为基线特征入模
-        allow_in_selection=False,      # 强制保留，不参与筛选
+        table_role="group",
+        allow_in_model=True,
+        allow_in_selection=False,
         log_transform=False,
         zscore=False,
-        impute_method=None,            # 建议由 pipeline 根据众数填补
+        impute_method="mode",          # 补齐：通常使用众数填补
+        ref_range=(0, 1),              # 补齐：以男性(0)为参考基准
     ),
 
     "admission_age": FeatureSpec(
@@ -102,13 +103,14 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         display_cn="住院时长",
         unit="days",
         clinical_domain="demographics",
-        table_role="outcome",          # 结局变量
-        allow_in_model=False,          # 结局指标永不作为特征入模
+        table_role="outcome",
+        allow_in_model=False,
         allow_in_selection=False,
-        time_aggregation: None,
-        time_anchor: None,
-        time_window_hr: None,
+        time_aggregation=None,         # 修正语法冒号
+        time_anchor=None,
+        time_window_hr=None,
         zscore=False,
+        clip_bounds=(0, 100),
     ),
     
     # =====================
@@ -558,15 +560,15 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         latex=r"P_{min}",
         unit="mg/dL",
         unit_si="mmol/L",
-        convert="phosphate_mgdl_to_mmol",
-        log_transform=False,           # 磷的分布相对集中
+        convert="phosphate_mgdl_to_mmol", # 1 mg/dL ≈ 0.323 mmol/L
+        log_transform=False,
         zscore=True,
         clinical_domain="renal",
         table_role="feature",
         time_aggregation="min",
         time_anchor="icu_admit",
         time_window_hr=24.0,
-        clip_bounds=(0.5, 15.0),       # 极高磷血症罕见超过15
+        clip_bounds=(0.5, 15.0),
         ref_range=(2.5, 4.5),
     ),
     
@@ -1205,6 +1207,7 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         # 限制每小时变化不超过 200 mg/dL (约 11 mmol/L)
         clip_bounds=(-200.0, 200.0),   
         ref_range=(-5.0, 5.0),         # 理想状态应波动极小
+        impute_method="constant_zero", # 变化率为缺失通常意味着数值平稳（slope=0）
     ),
 
     "spo2_slope": FeatureSpec(
@@ -1222,6 +1225,7 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         # 限制每小时血氧升降不超过 20%
         clip_bounds=(-20.0, 20.0),      
         ref_range=(-1.0, 1.0),
+        impute_method="constant_zero",
     ),
 
     # =====================
