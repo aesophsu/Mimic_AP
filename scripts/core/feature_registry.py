@@ -904,6 +904,51 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         ref_range=(40.0, 130.0),
     ),
 
+    "alt_min": FeatureSpec(
+        name="alt_min",
+        display_en="ALT (min)",
+        display_cn="丙氨酸氨基转移酶(最小)",
+        unit="IU/L",
+        unit_si="IU/L",
+        convert="identity",
+        log_transform=True,  # 肝酶通常呈偏态分布，建议开启
+        time_aggregation="min",
+        clinical_domain="biochemistry",
+        table_role="feature",
+        ref_range=(7.0, 55.0),
+        clip_bounds=(1.0, 10000.0)
+    ),
+
+    "ast_min": FeatureSpec(
+        name="ast_min",
+        display_en="AST (min)",
+        display_cn="天门冬氨酸氨基转移酶(最小)",
+        unit="IU/L",
+        unit_si="IU/L",
+        convert="identity",
+        log_transform=True,
+        time_aggregation="min",
+        clinical_domain="biochemistry",
+        table_role="feature",
+        ref_range=(8.0, 48.0),
+        clip_bounds=(1.0, 10000.0)
+    ),
+
+    "alp_min": FeatureSpec(
+        name="alp_min",
+        display_en="ALP (min)",
+        display_cn="碱性磷酸酶(最小)",
+        unit="IU/L",
+        unit_si="IU/L",
+        convert="identity",
+        log_transform=True,
+        time_aggregation="min",
+        clinical_domain="biochemistry",
+        table_role="feature",
+        ref_range=(40.0, 130.0),
+        clip_bounds=(10.0, 4000.0)
+    ),
+
     "tbar": FeatureSpec(
         name="tbar",
         display_en="B/A Ratio",
