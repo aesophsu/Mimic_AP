@@ -159,7 +159,7 @@ project_root/
 │   │   ├── 12_model_interpretation_shap.py
 │   │   ├── 13_clinical_calibration_dca.py 
 │   │   └── 14_nomogram_odds_ratio.py
-│   └── utils/                          # 工具中枢
+│   └── core/                          # 工具中枢
 │       ├── translation_config.py          # 静态配置：特征中英翻译、物理单位映射    
 │       ├── feature_manager.py             # 字典维护：自动注入翻译/单位至 JSON  
 │       ├── force_update_blacklist.py      # 预处理控制：强制锁定无需 Log 变换的特征
