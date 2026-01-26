@@ -64,7 +64,7 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         allow_in_selection=False,
         log_transform=False,
         zscore=False,
-        impute_method="mode",          # 补齐：通常使用众数填补
+        impute_method="constant_zero",          # 补齐：通常使用众数填补
         ref_range=(0, 1),              # 补齐：以男性(0)为参考基准
     ),
 
