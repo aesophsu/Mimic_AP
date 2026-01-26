@@ -69,6 +69,17 @@ def _safe_mul(x: Numeric, factor: float) -> Numeric:
 # =============================================================================
 # 1. Renal & Metabolic Conversions
 # =============================================================================
+@register_conversion("phosphate_mgdl_to_mmol")
+def phosphate_mgdl_to_mmol(x: Numeric) -> Numeric:
+    """Convert Phosphorus/Phosphate from mg/dL to mmol/L."""
+    # Factor: 0.3229
+    return _safe_mul(x, 0.3229)
+
+@register_conversion("gdl_to_gl_multiply_10")
+def gdl_to_gl_multiply_10(x: Numeric) -> Numeric:
+    """Convert Albumin/Hemoglobin from g/dL to g/L."""
+    return _safe_mul(x, 10.0)
+
 @register_conversion("bun_mgdl_to_mmol")
 def bun_mgdl_to_mmol(x: Numeric) -> Numeric:
     return _safe_mul(x, 0.357)
@@ -257,4 +268,27 @@ def unit_plausibility_check(
 
         if log:
             warnings.warn(msg)
+# =============================================================================
+# 6. Audit Metadata (Required by audit_feature_registry.py)
+# =============================================================================
 
+# 定义基础 SI 单位（这些单位通常不需要转换，直接被视为合法）
+_BASIC_UNITS = {
+    "10^9/L", "%", "mEq/L", "mmol/L", "IU/L", "sec", "years", 
+    "kg", "days", "mmHg", "bpm", "breaths/min", "C", "cm", "mL", "L",
+    "mg/dL/hr", "%/hr"  # <--- 添加这两个斜率单位
+}
+
+# 动态获取转换函数中可能涉及的单位后缀（从函数名中提取，如 'mgdl', 'umol'）
+# 这是一种防御性编程，确保你在 Registry 里写的单位能对应上转换逻辑
+_CONV_UNITS = set()
+for key in _CONVERSION_REGISTRY.keys():
+    # 提取 key 中包含的单位单词，例如 "bun_mgdl_to_mmol" -> {"mgdl", "mmol"}
+    parts = key.replace("_to_", "_").split("_")
+    _CONV_UNITS.update(parts)
+
+# 汇总所有合法单位白名单
+ALL_UNITS = _BASIC_UNITS | _CONV_UNITS | {"mg/dL", "g/dL", "umol/L", "µmol/L"}
+
+# 更新 __all__ 暴露接口
+__all__.append("ALL_UNITS")
