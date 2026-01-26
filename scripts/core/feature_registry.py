@@ -354,7 +354,7 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         ref_range=(4.0, 10.0),
     ),
 
-"hematocrit_min": FeatureSpec(
+    "hematocrit_min": FeatureSpec(
         name="hematocrit_min",
         display_en="Hct (min)",
         display_cn="红细胞压积(最小)",
@@ -643,6 +643,39 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         ref_range=(3.5, 5.0),
     ),
 
+
+    "calcium_min": FeatureSpec(
+        name="calcium_min",
+        display_en="Calcium (min)",
+        display_cn="血钙(最小)",
+        unit="mg/dL",
+        unit_si="mmol/L",
+        convert="calcium_mgdl_to_mmol",
+        time_window_hr=24.0,
+        time_aggregation="min",
+        clinical_domain="electrolyte",
+        table_role="feature",
+        ref_range=(8.5, 10.5),      # 正常生理范围 (8.5-10.5 mg/dL)
+        clip_bounds=(4.0, 20.0),    # 临床极端值截断，保护模型
+        impute_method="median"      # 默认中位数填充
+    ),
+
+    "calcium_max": FeatureSpec(
+        name="calcium_max",
+        display_en="Calcium (max)",
+        display_cn="血钙(最大)",
+        unit="mg/dL",
+        unit_si="mmol/L",
+        convert="calcium_mgdl_to_mmol",
+        time_window_hr=24.0,
+        time_aggregation="max",
+        clinical_domain="electrolyte",
+        table_role="feature",
+        ref_range=(8.5, 10.5),
+        clip_bounds=(4.0, 20.0),
+        impute_method="median"
+    ),
+
     "chloride_min": FeatureSpec(
         name="chloride_min",
         display_en="Cl (min)",
@@ -776,7 +809,7 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         ref_range=(7.35, 7.45),
     ),
     
-# =====================
+    # =====================
     # Labs: Liver Function
     # =====================
     "albumin_min": FeatureSpec(
@@ -910,7 +943,6 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         display_cn="丙氨酸氨基转移酶(最小)",
         unit="IU/L",
         unit_si="IU/L",
-        convert="identity",
         log_transform=True,  # 肝酶通常呈偏态分布，建议开启
         time_aggregation="min",
         clinical_domain="biochemistry",
@@ -925,7 +957,6 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         display_cn="天门冬氨酸氨基转移酶(最小)",
         unit="IU/L",
         unit_si="IU/L",
-        convert="identity",
         log_transform=True,
         time_aggregation="min",
         clinical_domain="biochemistry",
@@ -940,7 +971,6 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         display_cn="碱性磷酸酶(最小)",
         unit="IU/L",
         unit_si="IU/L",
-        convert="identity",
         log_transform=True,
         time_aggregation="min",
         clinical_domain="biochemistry",
@@ -1069,7 +1099,7 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         clip_bounds=(10.0, 150.0),
         ref_range=(25.0, 35.0),
     ),
-# =====================
+    # =====================
     # Labs: Perfusion & Inflammation
     # =====================
     "lactate_max": FeatureSpec(
@@ -1153,7 +1183,7 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         ref_range=(70.0, 100.0),
     ),
 
- # =====================
+    # =====================
     # Labs: Glucose (Lab-only)
     # =====================
     "glucose_lab_min": FeatureSpec(
@@ -1249,6 +1279,7 @@ FEATURE_REGISTRY: Dict[str, FeatureSpec] = {
         time_aggregation="slope",
         time_anchor="icu_admit",
         time_window_hr=24.0,
+        # 限制每小时变化不超过 200 mg/dL (约 11 mmol/L)
         clip_bounds=(-200.0, 200.0),   
         ref_range=(-5.0, 5.0),         # 理想状态应波动极小
         impute_method="constant_zero", # 变化率为缺失通常意味着数值平稳（slope=0）
