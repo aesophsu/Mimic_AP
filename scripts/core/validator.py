@@ -1,4 +1,4 @@
-# scripts/core/audit_feature_registry.py
+# scripts/core/validator.py
 
 """
 Audit script for FEATURE_REGISTRY in the AP-POF study.
